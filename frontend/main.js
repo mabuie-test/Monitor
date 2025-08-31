@@ -112,6 +112,80 @@ async function loadContactsCache() {
     }
   });
 }
+// --- Devices & Commands (frontend) ---
+async function fetchDevices() {
+  const token = getToken();
+  if (!token) return [];
+  return await api.get('/api/devices', token) || [];
+}
+
+function deviceOnline(lastSeen, thresholdSec = 120) {
+  if (!lastSeen) return false;
+  const diff = Date.now() - new Date(lastSeen).getTime();
+  return diff <= thresholdSec * 1000;
+}
+
+async function renderDevices() {
+  const token = getToken();
+  if (!token) { document.getElementById('devicesList').innerText = 'Login necessário'; return; }
+  const list = document.getElementById('devicesList');
+  list.innerHTML = '';
+  const devices = await fetchDevices();
+  if (!devices || devices.length === 0) { list.innerText = 'Nenhum dispositivo registado'; return; }
+  devices.forEach(d => {
+    const el = document.createElement('div');
+    el.style.display = 'flex';
+    el.style.justifyContent = 'space-between';
+    el.style.padding = '8px 0';
+    el.style.borderBottom = '1px solid #eee';
+
+    const label = document.createElement('div');
+    label.innerHTML = `<strong>${escapeHtml(d.label || d.deviceId)}</strong><br/><span style="color:#666">${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : 'never'}</span>`;
+    el.appendChild(label);
+
+    const right = document.createElement('div');
+    const dot = document.createElement('span');
+    const online = deviceOnline(d.lastSeen);
+    dot.textContent = online ? '●' : '●';
+    dot.style.color = online ? 'green' : 'red';
+    dot.style.marginRight = '8px';
+    right.appendChild(dot);
+
+    const sendBtn = document.createElement('button');
+    sendBtn.textContent = 'Hard Reset';
+    sendBtn.onclick = () => {
+      if (!confirm('Executar hard reset (factory wipe) neste dispositivo?')) return;
+      sendDeviceCommand(d.deviceId, 'HARD_RESET', {});
+    };
+    right.appendChild(sendBtn);
+
+    const startS = document.createElement('button');
+    startS.textContent = 'Start ScreenRec';
+    startS.style.marginLeft = '6px';
+    startS.onclick = () => sendDeviceCommand(d.deviceId, 'START_SCREEN_RECORD', {});
+    right.appendChild(startS);
+
+    const stopS = document.createElement('button');
+    stopS.textContent = 'Stop ScreenRec';
+    stopS.style.marginLeft = '6px';
+    stopS.onclick = () => sendDeviceCommand(d.deviceId, 'STOP_SCREEN_RECORD', {});
+    right.appendChild(stopS);
+
+    el.appendChild(right);
+    list.appendChild(el);
+  });
+}
+
+async function sendDeviceCommand(deviceId, command, params) {
+  const token = getToken();
+  if (!token) return alert('Login necessário');
+  const res = await api.post('/api/device/' + encodeURIComponent(deviceId) + '/command', { command, params }, token);
+  if (res && res.ok) {
+    alert('Comando enviado');
+  } else {
+    alert('Falha ao enviar comando: ' + (res && res.error ? res.error : 'unknown'));
+  }
+}
 
 async function loadMediaIndex() {
   const token = getToken();
