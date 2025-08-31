@@ -14,7 +14,8 @@ const notificationsRoutes = require('./routes/notifications');
 const appUsageRoutes = require('./routes/appUsage');
 const consentRoutes = require('./routes/consent');
 const authMiddleware = require('./middleware/auth');
-
+const updateLastSeen = require('./middlewares/updateLastSeen');
+// ... depois de app.use(express.json())
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -46,6 +47,7 @@ app.use('/api/whatsapp', authMiddleware, notificationsRoutes);
 app.use('/api/app-usage', authMiddleware, appUsageRoutes);
 app.use('/api/consent', authMiddleware, consentRoutes);
 app.use('/api/contacts', authMiddleware, contactsRoutes);
+app.use('/api', updateLastSeen); // opcionalmente filtra para rotas específicas
 
 // Serve frontend static
 app.use(express.static(path.join(__dirname, 'frontend')));
