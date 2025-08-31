@@ -1,24 +1,28 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>Mabuie Investigações - Painel</title>
+  <meta charset="utf-8" />
+  <title>Mabuie Investigacoes - Painel</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body { font-family: Arial, sans-serif; margin:20px; max-width:1000px; }
+    body { font-family: Arial, sans-serif; margin:20px; max-width:1100px; }
     .hidden { display:none; }
-    .login-box { max-width:400px; margin-bottom:20px; }
+    .login-box { max-width:420px; margin-bottom:20px; }
     section { margin-bottom: 24px; }
-    input.search { padding:6px; margin-right:6px; width:300px; }
+    input.search { padding:6px; margin-right:6px; width:320px; }
     ul.list { list-style:none; padding-left:0; }
-    ul.list li { padding:6px 0; border-bottom:1px solid #eee; }
-    .meta { color:#666; font-size:0.9em; margin-left:6px; }
+    ul.list li { padding:8px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
+    .meta { color:#666; font-size:0.9em; margin-left:8px; }
     .small { font-size:0.9em; color:#444; }
-    button.small { padding:4px 8px; margin-left:6px; }
+    button.small { padding:6px 8px; margin-left:8px; cursor:pointer; }
     .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .panel-title { margin:0 0 6px 0; }
+    .controls { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+    .playerPopup { position:fixed; left:50%; top:30%; transform:translate(-50%,-30%); background:#fff; border:1px solid #ccc; padding:12px; box-shadow:0 6px 18px rgba(0,0,0,0.15); z-index:9999; }
+    .closeBtn { margin-left:8px; }
   </style>
 </head>
 <body>
-
   <div class="topbar">
     <div>
       <h1 style="margin:0">Mabuie Investigações</h1>
@@ -42,42 +46,47 @@
   <div id="dashboard" class="hidden">
 
     <section>
-      <h2>Contactos</h2>
-      <input id="contactsQuery" class="search" placeholder="Procurar nome ou número" />
-      <button id="btnSearchContacts">Buscar</button>
-      <div id="contactsPaging" class="small" style="margin-top:6px">Página <span id="contactsPage">1</span></div>
-      <ul id="contactsList" class="list">Carregando...</ul>
+      <h2 class="panel-title">Contactos</h2>
+      <div class="controls">
+        <input id="contactsQuery" class="search" placeholder="Procurar nome ou número" />
+        <button id="btnSearchContacts" class="small">Buscar</button>
+        <button id="btnPrevContacts" class="small">Anterior</button>
+        <button id="btnNextContacts" class="small">Próxima</button>
+        <span class="small">Página <span id="contactsPage">1</span></span>
+      </div>
+      <ul id="contactsList" class="list">Carregando contactos...</ul>
     </section>
 
     <section>
-      <h2>SMS</h2>
-      <ul id="smsList" class="list">Carregando...</ul>
+      <h2 class="panel-title">SMS</h2>
+      <ul id="smsList" class="list">Carregando SMS...</ul>
     </section>
 
     <section>
-      <h2>Chamadas</h2>
-      <ul id="callsList" class="list">Carregando...</ul>
+      <h2 class="panel-title">Chamadas</h2>
+      <ul id="callsList" class="list">Carregando chamadas...</ul>
     </section>
 
     <section>
-      <h2>Notificações</h2>
-      <ul id="notifList" class="list">Carregando...</ul>
+      <h2 class="panel-title">Notificações (WhatsApp)</h2>
+      <ul id="notifList" class="list">Carregando notificações...</ul>
     </section>
 
     <section>
-      <h2>Localização</h2>
-      <ul id="locList" class="list">Carregando...</ul>
+      <h2 class="panel-title">Localização</h2>
+      <ul id="locList" class="list">Carregando localizações...</ul>
     </section>
 
     <section>
-      <h2>App Usage</h2>
-      <ul id="usageList" class="list">Carregando...</ul>
+      <h2 class="panel-title">App Usage</h2>
+      <ul id="usageList" class="list">Carregando uso...</ul>
     </section>
 
     <section>
-      <h2>Media</h2>
-      <ul id="mediaList" class="list">Carregando...</ul>
+      <h2 class="panel-title">Media</h2>
+      <ul id="mediaList" class="list">Carregando media...</ul>
     </section>
+
   </div>
 
   <script src="main.js"></script>
