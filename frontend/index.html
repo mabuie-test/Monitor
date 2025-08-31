@@ -2,59 +2,81 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Mabuie Investigações</title>
+  <title>Mabuie Investigações - Painel</title>
   <style>
     body { font-family: Arial, sans-serif; margin:20px; max-width:1000px; }
     .hidden { display:none; }
     .login-box { max-width:400px; margin-bottom:20px; }
     section { margin-bottom: 24px; }
+    input.search { padding:6px; margin-right:6px; width:300px; }
+    ul.list { list-style:none; padding-left:0; }
+    ul.list li { padding:6px 0; border-bottom:1px solid #eee; }
+    .meta { color:#666; font-size:0.9em; margin-left:6px; }
+    .small { font-size:0.9em; color:#444; }
+    button.small { padding:4px 8px; margin-left:6px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
   </style>
 </head>
 <body>
 
-  <h1>Painel de control</h1>
-<h2>Mabuie Investigações </h2>
+  <div class="topbar">
+    <div>
+      <h1 style="margin:0">Mabuie Investigações</h1>
+      <div class="small">Painel de controlo</div>
+    </div>
+    <div>
+      <span id="userName" class="small"></span>
+      <button id="btnLogout" class="small hidden">Sair</button>
+    </div>
+  </div>
+
   <div id="loginBox" class="login-box">
     <h2>Iniciar sessão</h2>
     <input id="username" placeholder="Usuário" /><br/><br/>
-    <input id="password" type="password" placeholder="senha" /><br/><br/>
+    <input id="password" type="password" placeholder="Senha" /><br/><br/>
     <button id="btnLogin">Entrar</button>
     <button id="btnRegister">Registar</button>
     <p id="loginMsg"></p>
   </div>
 
   <div id="dashboard" class="hidden">
-    <button id="btnLogout">Sair</button>
-    <h3>Usuário: <span id="userName"></span></h3>
 
     <section>
-      <h2>SMS's</h2>
-      <ul id="smsList">Carregando...</ul>
+      <h2>Contactos</h2>
+      <input id="contactsQuery" class="search" placeholder="Procurar nome ou número" />
+      <button id="btnSearchContacts">Buscar</button>
+      <div id="contactsPaging" class="small" style="margin-top:6px">Página <span id="contactsPage">1</span></div>
+      <ul id="contactsList" class="list">Carregando...</ul>
+    </section>
+
+    <section>
+      <h2>SMS</h2>
+      <ul id="smsList" class="list">Carregando...</ul>
     </section>
 
     <section>
       <h2>Chamadas</h2>
-      <ul id="callsList">Carregando...</ul>
+      <ul id="callsList" class="list">Carregando...</ul>
     </section>
 
     <section>
       <h2>Notificações</h2>
-      <ul id="notifList">Carregando...</ul>
+      <ul id="notifList" class="list">Carregando...</ul>
     </section>
 
     <section>
       <h2>Localização</h2>
-      <ul id="locList">Carregando...</ul>
+      <ul id="locList" class="list">Carregando...</ul>
     </section>
 
     <section>
       <h2>App Usage</h2>
-      <ul id="usageList">Loading...</ul>
+      <ul id="usageList" class="list">Carregando...</ul>
     </section>
 
     <section>
       <h2>Media</h2>
-      <ul id="mediaList">Loading...</ul>
+      <ul id="mediaList" class="list">Carregando...</ul>
     </section>
   </div>
 
