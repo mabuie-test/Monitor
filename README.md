@@ -22,3 +22,18 @@ Estrutura pronta para deploy no Render (Node.js).
    - GET  /api/media/:id (download)
 Frontend:
    - Served from /frontend (static)
+
+
+Monitor Backend + Frontend (com autenticação)
+---------------------------------------------
+
+1) Copiar .env.example -> .env e preencher MONGO_URI e JWT_SECRET
+2) npm install
+3) npm start
+4) Aceder ao painel: http://<host>:<port>/ (registar / login)
+
+Notas:
+- Todas as rotas de dados estão protegidas por JWT e associadas ao userId.
+- O app Android deve autenticar (fazer POST /api/auth/login) e enviar o token Authorization: Bearer <token> em cada pedido.
+- Ao enviar dados (SMS, calls, location, etc.) a app deve incluir deviceId e incluir o token no header.
+- Uploads de media são salvos em GridFS (metadata.userId = userId).
