@@ -48,7 +48,11 @@ app.use('/api/app-usage', authMiddleware, appUsageRoutes);
 app.use('/api/consent', authMiddleware, consentRoutes);
 app.use('/api/contacts', authMiddleware, contactsRoutes);
 app.use('/api', updateLastSeen); // opcionalmente filtra para rotas específicas
-
+//aqui
+app.use('/api/contacts', require('./routes/contacts'));
+app.use('/api', require('./routes/commands'));
+app.use('/api', require('./routes/media'));
+//até aqui
 // Serve frontend static
 app.use(express.static(path.join(__dirname, 'frontend')));
 
