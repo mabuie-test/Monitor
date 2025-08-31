@@ -2,64 +2,60 @@
 const express = require('express');
 const router = express.Router();
 const Contact = require('../models/Contact');
+const Device = require('../models/Device');
 
-/**
- * POST /api/contacts
- * Body: { deviceId, contacts: [{ name, number }, ...] }
- */
+// POST /api/contacts
 router.post('/', async (req, res) => {
   try {
-    const { deviceId, contacts } = req.body;
-    if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
-    if (!Array.isArray(contacts)) return res.status(400).json({ error: 'contacts array required' });
+    const { deviceId, contacts } = req.body || {};
+    if (!deviceId || !Array.isArray(contacts)) return res.status(400).json({ error: 'deviceId e contacts obrigatórios' });
 
-    // Option A: upsert contacts individually (keeps DB normalized)
-    // We'll remove duplicates for the same device+number and insert new ones.
+    // upsert device lastSeen (redundante se usar middleware)
+    await Device.updateOne({ deviceId }, { $set: { lastSeen: new Date() } }, { upsert: true });
+
     const ops = [];
-    for (const c of contacts) {
-      const name = (c.name || '').toString();
+    contacts.forEach(c => {
+      if (!c.number) return;
       const number = (c.number || '').toString();
-      if (!number) continue; // ignorar entradas sem número
       ops.push({
         updateOne: {
-          filter: { deviceId, number, userId: req.userId },
-          update: { $set: { name, deviceId, number, userId: req.userId } },
+          filter: { deviceId, number },
+          update: { $set: { name: c.name || '', number, deviceId } },
           upsert: true
         }
       });
-    }
+    });
 
-    if (ops.length > 0) {
-      // bulkWrite para performance
+    if (ops.length) {
       await Contact.bulkWrite(ops, { ordered: false });
     }
 
-    res.status(201).json({ ok: true, imported: ops.length });
-  } catch (err) {
-    console.error('contacts.post error', err);
-    res.status(500).json({ error: err.message });
+    return res.json({ ok: true, processed: ops.length });
+  } catch (e) {
+    console.error('contacts post error', e);
+    return res.status(500).json({ error: 'server error' });
   }
 });
 
-/**
- * GET /api/contacts
- * Query params: deviceId (optional), q (search string, optional)
- */
-router.get('/', async (req, res) => {
+// GET /api/contacts?q=&limit=&skip=  (opcionalmente protegido por auth)
+const auth = require('./_auth_mw'); // se quiser exigir login
+router.get('/', auth, async (req, res) => {
   try {
-    const q = req.query.q;
-    const deviceId = req.query.deviceId;
-    const filter = { userId: req.userId };
-    if (deviceId) filter.deviceId = deviceId;
+    const q = req.query.q || '';
+    const limit = Math.min(2000, parseInt(req.query.limit || '200', 10));
+    const skip = parseInt(req.query.skip || '0', 10);
+    const filter = {};
     if (q) {
-      // busca simples em name ou number
-      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [{ name: re }, { number: re }];
+      filter.$or = [
+        { name: { $regex: q, $options: 'i' } },
+        { number: { $regex: q.replace(/[^\d]/g, ''), $options: 'i' } }
+      ];
     }
-    const list = await Contact.find(filter).sort({ name: 1 }).limit(1000);
-    res.json(list);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const docs = await Contact.find(filter).sort({ name: 1 }).skip(skip).limit(limit).lean();
+    res.json(docs);
+  } catch (e) {
+    console.error('contacts get error', e);
+    res.status(500).json({ error: 'server error' });
   }
 });
 
