@@ -1,98 +1,90 @@
+// routes/media.js
 const express = require('express');
 const router = express.Router();
-const mongoose = require('mongoose');
 const multer = require('multer');
-const { GridFSBucket, ObjectId } = require('mongodb');
+const mongoose = require('mongoose');
+const { ObjectId } = require('mongodb');
+const Media = require('../models/Media');
+const Device = require('../models/Device');
+const auth = require('./_auth_mw');
 
-// memory storage
 const storage = multer.memoryStorage();
-const upload = multer({ storage });
+const upload = multer({ storage, limits: { fileSize: 300 * 1024 * 1024 } }); // até 300MB
 
 function getBucket() {
-  const db = mongoose.connection.db;
-  return new GridFSBucket(db, { bucketName: 'uploads' });
+  return new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: 'media' });
 }
 
-// upload file
-router.post('/upload', upload.single('media'), async (req, res) => {
+// POST /api/media/upload
+router.post('/media/upload', upload.single('media'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'no file' });
+    const file = req.file;
+    const deviceId = req.body.deviceId;
+    const type = req.body.type || 'unknown';
+    const metadataRaw = req.body.metadata || null;
+    if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
+    if (!file) return res.status(400).json({ error: 'media file required' });
+
+    // update lastSeen
+    await Device.updateOne({ deviceId }, { $set: { lastSeen: new Date() } }, { upsert: true });
+
+    let metadata = null;
+    try { metadata = metadataRaw ? JSON.parse(metadataRaw) : null; } catch (e) { metadata = metadataRaw; }
+
     const bucket = getBucket();
-
-    const metadata = {
-      userId: req.userId ? req.userId.toString() : null,
-      deviceId: req.body.deviceId || null,
-      type: req.body.type || null,
-      metadata: req.body.metadata || null
-    };
-
-    const uploadStream = bucket.openUploadStream(req.file.originalname, {
-      metadata,
-      contentType: req.file.mimetype
+    const uploadStream = bucket.openUploadStream(file.originalname, { contentType: file.mimetype || 'application/octet-stream' });
+    uploadStream.end(file.buffer);
+    uploadStream.on('error', (err) => {
+      console.error('gridfs upload error', err);
+      return res.status(500).json({ error: 'upload failed' });
     });
-
-    uploadStream.end(req.file.buffer);
-
-    uploadStream.on('finish', file => {
-      return res.status(201).json({ fileId: file._id, filename: file.filename });
+    uploadStream.on('finish', async (uploadedFile) => {
+      const mdoc = new Media({
+        deviceId,
+        filename: uploadedFile.filename,
+        contentType: uploadedFile.contentType,
+        fileId: uploadedFile._id,
+        metadata
+      });
+      await mdoc.save();
+      res.json({ ok: true, id: mdoc._id, fileId: uploadedFile._id });
     });
-
-    uploadStream.on('error', err => {
-      return res.status(500).json({ error: err.message });
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
+  } catch (e) {
+    console.error('media upload error', e);
+    res.status(500).json({ error: 'server error' });
   }
 });
 
-// list files for current user
-router.get('/', async (req, res) => {
+// GET /api/media  (list) - requires auth
+router.get('/api/media', auth, async (req, res) => {
   try {
-    const db = mongoose.connection.db;
-    const filesColl = db.collection('uploads.files');
-    const userId = req.userId ? req.userId.toString() : null;
-
-    const cursor = filesColl.find(userId ? { 'metadata.userId': userId } : {}).sort({ uploadDate: -1 }).limit(200);
-    const files = await cursor.toArray();
-    const out = files.map(f => ({
-      _id: f._id,
-      filename: f.filename,
-      metadata: f.metadata,
-      length: f.length,
-      contentType: f.contentType,
-      uploadDate: f.uploadDate
-    }));
-    res.json(out);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    const filter = {};
+    if (req.query.deviceId) filter.deviceId = req.query.deviceId;
+    const docs = await Media.find(filter).sort({ createdAt: -1 }).limit(200).lean();
+    res.json(docs);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'server error' }); }
 });
 
-// download (only if belongs to user)
-router.get('/:id', async (req, res) => {
+// GET /api/media/:id  -> stream GridFS
+router.get('/api/media/:id', auth, async (req, res) => {
   try {
     const id = req.params.id;
-    if (!ObjectId.isValid(id)) return res.status(400).json({ error: 'invalid id' });
-
-    const _id = new ObjectId(id);
-    const db = mongoose.connection.db;
-    const filesColl = db.collection('uploads.files');
-    const file = await filesColl.findOne({ _id });
-
-    if (!file) return res.status(404).json({ error: 'no file' });
-    if (!file.metadata || file.metadata.userId !== req.userId.toString()) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-
-    const bucket = new GridFSBucket(db, { bucketName: 'uploads' });
-    res.set('Content-Type', file.contentType || 'application/octet-stream');
-    res.set('Content-Disposition', 'attachment; filename="' + file.filename + '"');
-
+    if (!id) return res.status(400).json({ error: 'id required' });
+    const mdoc = await Media.findById(id).lean();
+    if (!mdoc) return res.status(404).json({ error: 'not found' });
+    const bucket = getBucket();
+    const _id = new ObjectId(mdoc.fileId);
     const downloadStream = bucket.openDownloadStream(_id);
-    downloadStream.on('error', err => res.status(500).json({ error: err.message }));
+    res.setHeader('Content-Disposition', 'attachment; filename="' + (mdoc.filename || 'file') + '"');
+    res.setHeader('Content-Type', mdoc.contentType || 'application/octet-stream');
+    downloadStream.on('error', (err) => {
+      console.error('download stream error', err);
+      res.status(500).end();
+    });
     downloadStream.pipe(res);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (e) {
+    console.error('media download error', e);
+    res.status(500).json({ error: 'server error' });
   }
 });
 
