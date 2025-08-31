@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const path = require('path');
-
+const contactsRoutes = require('./routes/contacts');
 const authRoutes = require('./routes/auth');
 const smsRoutes = require('./routes/sms');
 const callsRoutes = require('./routes/calls');
@@ -45,6 +45,7 @@ app.use('/api/media', authMiddleware, mediaRoutes);
 app.use('/api/whatsapp', authMiddleware, notificationsRoutes);
 app.use('/api/app-usage', authMiddleware, appUsageRoutes);
 app.use('/api/consent', authMiddleware, consentRoutes);
+app.use('/api/contacts', authMiddleware, contactsRoutes);
 
 // Serve frontend static
 app.use(express.static(path.join(__dirname, 'frontend')));
