@@ -4,38 +4,64 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
-const authRoutes = require('./routes/auth');
-const devicesRoutes = require('./routes/devices');
-const dataRoutes = require('./routes/data');
-const mediaRoutes = require('./routes/media');
+// routers
+const authRouter = require('./routes/auth');
+const contactsRouter = require('./routes/contacts');
+const dataRouter = require('./routes/data');
+const mediaRouter = require('./routes/media');
+const commandsRouter = require('./routes/commands');
+const devicesRouter = require('./routes/devices');
+
+const updateLastSeen = require('./middlewares/updateLastSeen');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// Static frontend
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// serve frontend: prefer /public, fallback to /frontend
+const publicDir = path.join(__dirname, '..', 'public');
+const frontendDir = fs.existsSync(publicDir) ? publicDir : path.join(__dirname, '..', 'frontend');
+if (fs.existsSync(frontendDir)) {
+  app.use(express.static(frontendDir));
+} else {
+  console.warn('No frontend directory found (public nor frontend).');
+}
 
-// MongoDB
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/monitor';
-mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(()=> console.log('MongoDB connected'))
-  .catch(err => {
-    console.error('MongoDB connection error', err);
-    // do not exit: allow dev to see error
-  });
+// connect to mongodb only if MONGODB_URI is defined
+(async () => {
+  try {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) {
+      console.warn('MONGODB_URI not set in env; DB-dependent routes will fail until configured.');
+      return;
+    }
+    await mongoose.connect(uri, { dbName: 'monitor' });
+    console.log('MongoDB connected');
+  } catch (e) {
+    console.error('MongoDB connection error', e && e.message);
+  }
+})();
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/devices', devicesRoutes);
-app.use('/api', dataRoutes);     // sms, call, location, contacts, app-usage, whatsapp
-app.use('/api/media', mediaRoutes);
+// apply lastSeen middleware to API routes that should mark device activity
+app.use('/api', updateLastSeen);
 
-// fallback to index.html for SPA
+// mount routers
+app.use('/api/auth', authRouter);
+app.use('/api/contacts', contactsRouter);
+app.use('/api', dataRouter);
+app.use('/api', mediaRouter);
+app.use('/api', commandsRouter);
+app.use('/api', devicesRouter);
+
+// fallback route for SPA
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  const indexFile = path.join(frontendDir, 'index.html');
+  if (fs.existsSync(indexFile)) return res.sendFile(indexFile);
+  return res.status(404).send('index.html not found');
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=> console.log(`Server listening on ${PORT}`));
+app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
