@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Mabuie Monitor - Painel</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="" crossorigin=""/>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Mabuie Monitor</h1>
+      <div id="authArea">
+        <div id="loginBox">
+          <input id="username" placeholder="Usuário" />
+          <input id="password" type="password" placeholder="Senha" />
+          <button id="btnLogin">Entrar</button>
+          <button id="btnRegister">Registar</button>
+          <div id="loginMsg"></div>
+        </div>
+        <div id="userBox" class="hidden">
+          <span id="userName"></span>
+          <button id="btnLogout">Sair</button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <nav id="menu">
+        <button class="menu-btn" data-target="contacts"><span class="icon">📇</span><span>Contactos</span></button>
+        <button class="menu-btn" data-target="sms"><span class="icon">✉️</span><span>SMS</span></button>
+        <button class="menu-btn" data-target="calls"><span class="icon">📞</span><span>Chamadas</span></button>
+        <button class="menu-btn" data-target="notifs"><span class="icon">🔔</span><span>Notifs</span></button>
+        <button class="menu-btn" data-target="location"><span class="icon">📍</span><span>Mapa</span></button>
+        <button class="menu-btn" data-target="usage"><span class="icon">📊</span><span>App Usage</span></button>
+        <button class="menu-btn" data-target="media"><span class="icon">🎧</span><span>Media</span></button>
+        <button class="menu-btn" data-target="devices"><span class="icon">📱</span><span>Dispositivos</span></button>
+      </nav>
+
+      <section id="content">
+        <div id="contactsPanel" class="panel hidden">
+          <h2>Contactos</h2>
+          <input id="contactsQuery" placeholder="Buscar nome ou número" />
+          <button id="btnSearchContacts">Buscar</button>
+          <ul id="contactsList" class="list"></ul>
+        </div>
+
+        <div id="smsPanel" class="panel hidden">
+          <h2>SMS</h2>
+          <ul id="smsList" class="list"></ul>
+        </div>
+
+        <div id="callsPanel" class="panel hidden">
+          <h2>Chamadas</h2>
+          <ul id="callsList" class="list"></ul>
+        </div>
+
+        <div id="notifsPanel" class="panel hidden">
+          <h2>Notificações</h2>
+          <ul id="notifList" class="list"></ul>
+        </div>
+
+        <div id="locationPanel" class="panel hidden">
+          <h2>Mapa de Localizações</h2>
+          <div id="map" style="height:500px;"></div>
+          <div><label>Filtro DeviceId: <input id="mapDeviceId" placeholder="deviceId (opcional)"></label>
+            <button id="btnReloadMap">Recarregar</button>
+          </div>
+        </div>
+
+        <div id="usagePanel" class="panel hidden">
+          <h2>App Usage</h2>
+          <ul id="usageList" class="list"></ul>
+        </div>
+
+        <div id="mediaPanel" class="panel hidden">
+          <h2>Media</h2>
+          <ul id="mediaList" class="list"></ul>
+        </div>
+
+        <div id="devicesPanel" class="panel hidden">
+          <h2>Dispositivos</h2>
+          <div id="devicesList"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="main.js"></script>
+</body>
+            </html>
