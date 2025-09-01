@@ -1,57 +1,52 @@
+// src/routes/contacts.js
 const express = require('express');
 const router = express.Router();
-const Contact = require('../models/Contact');
+const auth = require('./_auth_mw'); // middleware de autenticação já presente na tua árvore
 const Device = require('../models/Device');
-const auth = require('./_auth_mw');
+const Contact = require('../models/Contact');
 
-// POST /api/contacts
-router.post('/', async (req, res) => {
+/**
+ * POST /api/contacts
+ * body: { deviceId, deviceRecordId, contacts: [{ name, number }, ...] }
+ * - exige autenticação (auth middleware)
+ * - verifica se o device pertence ao user (deviceRecordId preferencial)
+ * - substitui (replace) os contactos do device por new list
+ */
+router.post('/', auth, async (req, res) => {
   try {
-    const { deviceId, contacts } = req.body || {};
-    if (!deviceId || !Array.isArray(contacts)) return res.status(400).json({ error: 'deviceId and contacts required' });
+    const { deviceId, deviceRecordId, contacts } = req.body;
+    if (!Array.isArray(contacts)) return res.status(400).json({ error: 'contacts must be array' });
 
-    await Device.updateOne({ deviceId }, { $set: { lastSeen: new Date() } }, { upsert: true });
-
-    const ops = [];
-    contacts.forEach(c => {
-      if (!c.number) return;
-      const number = (c.number || '').toString();
-      ops.push({
-        updateOne: {
-          filter: { deviceId, number },
-          update: { $set: { name: c.name || '', number, deviceId } },
-          upsert: true
-        }
-      });
-    });
-
-    if (ops.length) await Contact.bulkWrite(ops, { ordered: false });
-
-    res.json({ ok: true, processed: ops.length });
-  } catch (e) {
-    console.error('contacts post error', e && e.message ? e.message : e);
-    res.status(500).json({ error: 'server error' });
-  }
-});
-
-// GET /api/contacts (protected)
-router.get('/', auth, async (req, res) => {
-  try {
-    const q = req.query.q || '';
-    const limit = Math.min(2000, parseInt(req.query.limit || '200', 10));
-    const skip = parseInt(req.query.skip || '0', 10);
-    const filter = {};
-    if (q) {
-      filter.$or = [
-        { name: { $regex: q, $options: 'i' } },
-        { number: { $regex: q.replace(/[^\d]/g, ''), $options: 'i' } }
-      ];
+    // localizar device associado ao user
+    let device = null;
+    if (deviceRecordId) {
+      device = await Device.findById(deviceRecordId);
     }
-    const docs = await Contact.find(filter).sort({ name: 1 }).skip(skip).limit(limit).lean();
-    res.json(docs);
+    if (!device && deviceId) {
+      device = await Device.findOne({ androidId: deviceId, user: req.user.id });
+    }
+    if (!device) return res.status(403).json({ error: 'device not found or not owned by user' });
+
+    // remover contatos antigos e inserir os novos
+    await Contact.deleteMany({ device: device._id, user: req.user.id });
+
+    const docs = contacts
+      .filter(c => c && (c.number || c.name))
+      .map(c => ({
+        device: device._id,
+        user: req.user.id,
+        name: c.name || '',
+        number: c.number || ''
+      }));
+
+    if (docs.length > 0) {
+      await Contact.insertMany(docs);
+    }
+
+    return res.json({ ok: true, count: docs.length });
   } catch (e) {
-    console.error('contacts get error', e && e.message ? e.message : e);
-    res.status(500).json({ error: 'server error' });
+    console.error('contacts POST error', e);
+    return res.status(500).json({ error: e.message });
   }
 });
 
