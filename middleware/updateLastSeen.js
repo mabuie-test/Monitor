@@ -1,3 +1,4 @@
+// src/middlewares/updateLastSeen.js
 const Device = require('../models/Device');
 
 module.exports = async function updateLastSeen(req, res, next) {
