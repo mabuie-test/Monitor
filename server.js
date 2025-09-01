@@ -1,64 +1,53 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const bodyParser = require('body-parser');
 const cors = require('cors');
 const path = require('path');
-const contactsRoutes = require('./routes/contacts');
-const authRoutes = require('./routes/auth');
-const smsRoutes = require('./routes/sms');
-const callsRoutes = require('./routes/calls');
-const locationRoutes = require('./routes/location');
-const mediaRoutes = require('./routes/media');
-const notificationsRoutes = require('./routes/notifications');
-const appUsageRoutes = require('./routes/appUsage');
-const consentRoutes = require('./routes/consent');
-const authMiddleware = require('./middleware/auth');
+
+const authRouter = require('./routes/auth');
+const contactsRouter = require('./routes/contacts');
+const dataRouter = require('./routes/data');
+const mediaRouter = require('./routes/media');
+const commandsRouter = require('./routes/commands');
+const devicesRouter = require('./routes/devices');
+
 const updateLastSeen = require('./middlewares/updateLastSeen');
-// ... depois de app.use(express.json())
+
 const app = express();
-const PORT = process.env.PORT || 3000;
-
 app.use(cors());
-app.use(bodyParser.json({ limit: '20mb' }));
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-const mongoUri = process.env.MONGO_URI;
-if (!mongoUri) {
-  console.error('MONGO_URI not set. Copy .env.example to .env and set MONGO_URI');
-  process.exit(1);
-}
+// Serve frontend
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// Connect mongoose
-mongoose.connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
-const conn = mongoose.connection;
-conn.on('error', (err) => console.error('Mongo connection error', err));
-conn.once('open', () => console.log('MongoDB connected'));
+// Connect to MongoDB
+(async () => {
+  try {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) throw new Error('MONGODB_URI not set');
+    await mongoose.connect(uri, { dbName: 'monitor' });
+    console.log('MongoDB connected');
+  } catch (e) {
+    console.error('MongoDB connection error', e);
+    process.exit(1);
+  }
+})();
 
-// Public routes
-app.use('/api/auth', authRoutes);
+// apply updateLastSeen middleware to device data routes
+app.use('/api', updateLastSeen);
 
-// Protected API routes (require JWT)
-app.use('/api/sms', authMiddleware, smsRoutes);
-app.use('/api/call', authMiddleware, callsRoutes);
-app.use('/api/location', authMiddleware, locationRoutes);
-app.use('/api/media', authMiddleware, mediaRoutes);
-app.use('/api/whatsapp', authMiddleware, notificationsRoutes);
-app.use('/api/app-usage', authMiddleware, appUsageRoutes);
-app.use('/api/consent', authMiddleware, consentRoutes);
-app.use('/api/contacts', authMiddleware, contactsRoutes);
-app.use('/api', updateLastSeen); // opcionalmente filtra para rotas específicas
-//aqui
-app.use('/api/contacts', require('./routes/contacts'));
-app.use('/api', require('./routes/commands'));
-app.use('/api', require('./routes/media'));
-//até aqui
-// Serve frontend static
-app.use(express.static(path.join(__dirname, 'frontend')));
+// routes
+app.use('/api/auth', authRouter);
+app.use('/api/contacts', contactsRouter);
+app.use('/api', dataRouter);        // /call /sms /location /app-usage /whatsapp
+app.use('/api', mediaRouter);       // /media/upload /media, /media/:id
+app.use('/api', commandsRouter);    // /commands/poll /commands/ack /device/:deviceId/command
+app.use('/api', devicesRouter);     // /devices /devices/:deviceId/claim
 
-// Health
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+// fallback
+app.get('/api', (req, res) => res.json({ ok: true }));
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 
-app.listen(PORT, () => {
-  console.log('Server running on port', PORT);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
