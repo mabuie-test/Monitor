@@ -1,24 +1,49 @@
+// src/routes/devices.js
 const express = require('express');
 const router = express.Router();
-const Device = require('../models/Device');
 const auth = require('./_auth_mw');
+const Device = require('../models/Device');
 
-// GET /api/devices
-router.get('/devices', auth, async (req, res) => {
+/**
+ * POST /api/devices/register
+ * Body: { deviceId: "<ANDROID_ID>", label: "<optional>" }
+ * Requires auth. Associates device to the authenticated user (creates if none).
+ */
+router.post('/register', auth, async (req, res) => {
   try {
-    const docs = await Device.find({}).sort({ lastSeen: -1 }).lean();
-    res.json(docs);
-  } catch (e) { console.error(e); res.status(500).json({ error: 'server error' }); }
+    const { deviceId, label } = req.body || {};
+    if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
+
+    // Try find device for this user
+    let device = await Device.findOne({ androidId: deviceId, user: req.user.id });
+    if (!device) {
+      device = new Device({ androidId: deviceId, label: label || '', user: req.user.id, lastSeen: new Date() });
+      await device.save();
+    } else {
+      // update label/lastSeen
+      device.label = label || device.label;
+      device.lastSeen = new Date();
+      await device.save();
+    }
+    return res.json({ ok: true, deviceRecordId: device._id.toString(), androidId: device.androidId });
+  } catch (err) {
+    console.error('devices/register error', err);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
-// POST /api/devices/:deviceId/claim
-router.post('/devices/:deviceId/claim', auth, async (req, res) => {
+/**
+ * GET /api/devices
+ * Returns devices that belong to authenticated user only.
+ */
+router.get('/', auth, async (req, res) => {
   try {
-    const deviceId = req.params.deviceId;
-    const userId = req.user.userId;
-    await Device.updateOne({ deviceId }, { $set: { userId, lastSeen: new Date() } }, { upsert: true });
-    res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ error: 'server error' }); }
+    const devices = await Device.find({ user: req.user.id }).select('-__v').lean();
+    return res.json(devices);
+  } catch (err) {
+    console.error('devices list error', err);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
