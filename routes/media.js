@@ -3,12 +3,14 @@ const router = express.Router();
 const multer = require('multer');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
+
 const Media = require('../models/Media');
 const Device = require('../models/Device');
+const { requireUser } = require('../middleware/auth');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// routes/media.js (trecho do POST /upload)
+// POST /api/media/upload
 router.post('/upload', upload.single('media'), async (req, res) => {
   try {
     const { deviceId, type, metadata } = req.body;
@@ -19,20 +21,15 @@ router.post('/upload', upload.single('media'), async (req, res) => {
     const dev = await Device.findOne({ deviceId });
     if (!dev || !dev.user) return res.status(403).json({ error: 'device not registered/associated' });
 
-    // compute checksum (sha256)
+    // compute checksum
     const checksum = crypto.createHash('sha256').update(file.buffer).digest('hex');
 
-    // find device and user
-    let dev = null;
-    if (deviceId) dev = await Device.findOne({ deviceId });
-
-    // check duplicate: same device and checksum (or optionally only checksum globally)
+    // check duplicate for same device
     let existing = await Media.findOne({ deviceId: deviceId, checksum: checksum });
     if (existing) {
       return res.json({ ok: true, duplicate: true, existingId: existing._id });
     }
 
-    // upload to GridFS
     const gfs = req.app.locals.gfsBucket;
     if (!gfs) return res.status(500).json({ error: 'GridFS not ready' });
 
@@ -50,7 +47,7 @@ router.post('/upload', upload.single('media'), async (req, res) => {
       .on('finish', async () => {
         const doc = new Media({
           deviceId,
-          user: dev && dev.user ? dev.user : null,
+          user: dev.user,
           filename: file.originalname,
           contentType: file.mimetype,
           type: type || null,
@@ -62,7 +59,7 @@ router.post('/upload', upload.single('media'), async (req, res) => {
         });
         await doc.save();
 
-        // emit event to the owning user if exists
+        // emit event to user room
         const io = req.app.locals.io;
         if (io && doc.user) {
           io.to(`user:${String(doc.user)}`).emit('media:new', {
@@ -83,14 +80,14 @@ router.post('/upload', upload.single('media'), async (req, res) => {
   }
 });
 
-// routes/media.js (GET /:id)
-const { requireUser } = require('../middleware/auth');
+// GET /api/media/:id -> requires JWT and ownership
 router.get('/:id', requireUser, async (req, res) => {
   try {
     const id = req.params.id;
     const doc = await Media.findById(id);
     if (!doc) return res.status(404).json({ error: 'not found' });
     if (!doc.user || String(doc.user) !== String(req.user.id)) return res.status(403).json({ error: 'forbidden' });
+
     const gfs = req.app.locals.gfsBucket;
     const _id = mongoose.Types.ObjectId(doc.gfsId);
     const downloadStream = gfs.openDownloadStream(_id);
@@ -106,4 +103,5 @@ router.get('/:id', requireUser, async (req, res) => {
     res.status(500).json({ error: 'server error' });
   }
 });
+
 module.exports = router;
