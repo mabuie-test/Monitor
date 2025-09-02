@@ -40,7 +40,9 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// device registration: attach deviceId to user (requires auth)
+// routes/auth.js (trecho relevante)
+const { requireUser } = require('../middleware/auth');
+
 router.post('/device/register', requireUser, async (req, res) => {
   try {
     const { deviceId, label } = req.body;
