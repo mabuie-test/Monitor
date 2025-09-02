@@ -30,16 +30,16 @@ const api = {
     }
     return res.json();
   },
-  download: async (path, token) => {
-    const res = await fetch(API_BASE + path, { headers: { Authorization: 'Bearer ' + token }});
-    if (!res.ok) {
-      const txt = await res.text().catch(()=>'<no body>');
-      console.error('download failed', path, res.status, txt);
-      throw new Error('download failed: ' + res.status);
-    }
-    return res.blob();
+  // no topo de main.js, substitui download por:
+download: async (path, token) => {
+  const res = await fetch(API_BASE + path, { headers: { Authorization: 'Bearer ' + token }});
+  if (!res.ok) {
+    const txt = await res.text().catch(()=>'<no body>');
+    console.error('download failed', path, res.status, txt);
+    throw new Error('download failed: ' + res.status + ' ' + txt);
   }
-};
+  return res.blob();
+                          }
 
 document.getElementById('btnLogin').addEventListener('click', async () => {
   const u = document.getElementById('username').value;
