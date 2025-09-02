@@ -1,39 +1,24 @@
-Monitor Backend + Frontend
-==========================
-Estrutura pronta para deploy no Render (Node.js).
+# Monitor Backend + Frontend (Node/Express + MongoDB Atlas)
 
-1) Copie o conteúdo de .env.example para .env e ajuste MONGO_URI.
-2) Instale dependências: npm install
-3) Start: npm start
-4) API endpoints:
-   - POST /api/sms
-   - GET  /api/sms
-   - POST /api/call
-   - GET  /api/call
-   - POST /api/location
-   - GET  /api/location
-   - POST /api/app-usage
-   - GET  /api/app-usage
-   - POST /api/whatsapp
-   - GET  /api/whatsapp
-   - POST /api/consent
-   - POST /api/media/upload (multipart/form-data file field 'media')
-   - GET  /api/media (list metadata)
-   - GET  /api/media/:id (download)
-Frontend:
-   - Served from /frontend (static)
+## Requisitos
+- Node 18+ (ou LTS)
+- MongoDB Atlas URI
+- Render/Heroku or servidor
 
+## Setup
+1. Copia `.env.example` para `.env` e preenche `MONGO_URI` e `JWT_SECRET`.
+2. `npm install`
+3. `npm start` (ou deploy no Render)
 
-Monitor Backend + Frontend (com autenticação)
----------------------------------------------
+## Endpoints importantes
+- POST `/api/auth/register` {username,password}
+- POST `/api/auth/login` {username,password} -> retorna `{ token, user }`
+- POST `/api/auth/device/register` (com Authorization Bearer token) { deviceId, label }
+- Device -> POST `/api/location`, `/api/sms`, `/api/call`, `/api/media/upload`, `/api/contacts` (device only) **device must be registered & associated to a user**
+- Frontend: serve static files em `/public` (index.html + main.js)
 
-1) Copiar .env.example -> .env e preencher MONGO_URI e JWT_SECRET
-2) npm install
-3) npm start
-4) Aceder ao painel: http://<host>:<port>/ (registar / login)
-
-Notas:
-- Todas as rotas de dados estão protegidas por JWT e associadas ao userId.
-- O app Android deve autenticar (fazer POST /api/auth/login) e enviar o token Authorization: Bearer <token> em cada pedido.
-- Ao enviar dados (SMS, calls, location, etc.) a app deve incluir deviceId e incluir o token no header.
-- Uploads de media são salvos em GridFS (metadata.userId = userId).
+## Notes
+- GridFS via mongoose.mongo.GridFSBucket
+- socket.io used to push `location:new`, `media:new`, `notification:new` to logged-in users
+- Media deduplication by SHA-256 checksum (device should also send checksum in metadata optionally)
+- JWT tokens are signed without expiry (as requested). To enable expiry, change `signTokenForUser` to include `expiresIn`.
