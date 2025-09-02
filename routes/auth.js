@@ -2,9 +2,8 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const User = require('../models/User');
 const Device = require('../models/Device');
-const { signTokenForUser } = require('../middleware/auth');
+const { signTokenForUser, requireUser } = require('../middleware/auth');
 const router = express.Router();
-const { requireUser } = require('../middleware/auth');
 
 // register
 router.post('/register', async (req, res) => {
@@ -23,7 +22,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// login -> returns token + user
+// login
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -40,19 +39,18 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// routes/auth.js (trecho relevante)
-const { requireUser } = require('../middleware/auth');
-
+// register device (requires auth) -> associates device to user
 router.post('/device/register', requireUser, async (req, res) => {
   try {
-    const { deviceId, label } = req.body;
+    const { deviceId, label, metadata } = req.body;
     if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
     let dev = await Device.findOne({ deviceId });
     if (!dev) {
-      dev = new Device({ deviceId, user: req.user.id, label });
+      dev = new Device({ deviceId, user: req.user.id, label, metadata });
     } else {
       dev.user = req.user.id;
       if (label) dev.label = label;
+      if (metadata) dev.metadata = metadata;
     }
     dev.lastSeen = new Date();
     await dev.save();
