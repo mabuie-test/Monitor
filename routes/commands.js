@@ -4,7 +4,7 @@ const Command = require('../models/Command');
 const Device = require('../models/Device');
 const { requireUser } = require('../middleware/auth');
 
-// device polls commands
+// device polls commands (no auth required for device)
 router.post('/commands/poll', async (req, res) => {
   try {
     const { deviceId } = req.body;
@@ -30,7 +30,7 @@ router.post('/commands/ack', async (req, res) => {
   }
 });
 
-// admin (user) create command for device
+// user create command for device (requires user)
 router.post('/device/:deviceId/command', requireUser, async (req, res) => {
   try {
     const { deviceId } = req.params;
