@@ -7,6 +7,7 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
+
 const authRoutes = require('./routes/auth');
 const deviceRoutes = require('./routes/devices');
 const dataRoutes = require('./routes/data');
@@ -22,16 +23,15 @@ const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!MONGO_URI || !JWT_SECRET) {
-  console.error("MONGO_URI or JWT_SECRET not set.");
+  console.error("Please set MONGO_URI and JWT_SECRET in environment (.env).");
   process.exit(1);
 }
 
-// connect mongoose
+// connect to mongo
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log("MongoDB connected");
     const db = mongoose.connection.db;
-    // GridFSBucket via mongoose.mongo
     const GridFSBucket = mongoose.mongo.GridFSBucket;
     app.locals.gfsBucket = new GridFSBucket(db, { bucketName: 'mediaFiles' });
   })
@@ -40,25 +40,31 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
     process.exit(1);
   });
 
-// serve frontend
+// serve frontend static files from /public
 app.use(express.static(path.join(__dirname, 'public')));
 
-// base routes
+// api routes
 app.use('/api/auth', authRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api', dataRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api', commandsRoutes);
 
+// health
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-// create http server and attach socket.io
+// fallback -> serve index
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// start http + socket.io
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET","POST"] }
 });
 
-// socket auth middleware (token via query ?token=...)
+// socket auth using token in query
 io.use((socket, next) => {
   const token = socket.handshake.query && socket.handshake.query.token;
   if (!token) return next(new Error('auth error'));
@@ -72,7 +78,6 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  // join user room
   const userId = socket.user.id;
   const room = `user:${userId}`;
   socket.join(room);
@@ -83,7 +88,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// expose io to routes via app.locals
+// expose io to routes
 app.locals.io = io;
 
 server.listen(PORT, () => {
