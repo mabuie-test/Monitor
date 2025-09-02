@@ -1,11 +1,12 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { GridFSBucket } = require('mongodb');
 const path = require('path');
-
+const jwt = require('jsonwebtoken');
+const { Server } = require('socket.io');
 const authRoutes = require('./routes/auth');
 const deviceRoutes = require('./routes/devices');
 const dataRoutes = require('./routes/data');
@@ -14,20 +15,24 @@ const commandsRoutes = require('./routes/commands');
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json({ limit: '20mb' }));
+app.use(bodyParser.json({ limit: '30mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
-if (!MONGO_URI) {
-  console.error("MONGO_URI not set. See .env.example");
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!MONGO_URI || !JWT_SECRET) {
+  console.error("MONGO_URI or JWT_SECRET not set.");
   process.exit(1);
 }
 
+// connect mongoose
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log("MongoDB connected");
     const db = mongoose.connection.db;
+    // GridFSBucket via mongoose.mongo
+    const GridFSBucket = mongoose.mongo.GridFSBucket;
     app.locals.gfsBucket = new GridFSBucket(db, { bucketName: 'mediaFiles' });
   })
   .catch(err => {
@@ -35,24 +40,52 @@ mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
     process.exit(1);
   });
 
-// Serve frontend static files from /public
+// serve frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
-// API routes (prefix /api)
+// base routes
 app.use('/api/auth', authRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api', dataRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api', commandsRoutes);
 
-// Health endpoint
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-// fallback: serve index
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// create http server and attach socket.io
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*", methods: ["GET","POST"] }
 });
 
-app.listen(PORT, () => {
+// socket auth middleware (token via query ?token=...)
+io.use((socket, next) => {
+  const token = socket.handshake.query && socket.handshake.query.token;
+  if (!token) return next(new Error('auth error'));
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    socket.user = { id: payload.id, username: payload.username };
+    return next();
+  } catch (e) {
+    return next(new Error('auth error'));
+  }
+});
+
+io.on('connection', (socket) => {
+  // join user room
+  const userId = socket.user.id;
+  const room = `user:${userId}`;
+  socket.join(room);
+  console.log('socket connected user', socket.user.username, 'room', room);
+
+  socket.on('disconnect', () => {
+    console.log('socket disconnected', socket.user && socket.user.username);
+  });
+});
+
+// expose io to routes via app.locals
+app.locals.io = io;
+
+server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });
