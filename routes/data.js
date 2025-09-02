@@ -67,7 +67,7 @@ router.post('/contacts', async (req, res) => {
   } catch (e) { console.error('contacts err', e); res.status(500).json({ error: 'server error' }); }
 });
 
-// POST /api/location
+// ... dentro de routes/data.js
 router.post('/location', async (req, res) => {
   try {
     const { deviceId, lat, lon, accuracy, timestamp } = req.body;
@@ -78,6 +78,20 @@ router.post('/location', async (req, res) => {
       lat, lon, accuracy: accuracy || 0, timestamp: timestamp ? new Date(timestamp) : new Date()
     });
     await doc.save();
+
+    // emitir para usuario via socket
+    const io = req.app.locals.io;
+    if (io && doc.user) {
+      io.to(`user:${String(doc.user)}`).emit('location:new', {
+        _id: doc._id,
+        deviceId: doc.deviceId,
+        lat: doc.lat,
+        lon: doc.lon,
+        accuracy: doc.accuracy,
+        timestamp: doc.timestamp
+      });
+    }
+
     res.json({ ok: true });
   } catch (e) { console.error('location err', e); res.status(500).json({ error: 'server error' }); }
 });
