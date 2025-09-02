@@ -1,26 +1,33 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { ObjectId } = require('mongodb');
+const crypto = require('crypto');
+const mongoose = require('mongoose');
 const Media = require('../models/Media');
 const Device = require('../models/Device');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// POST /api/media/upload
 router.post('/upload', upload.single('media'), async (req, res) => {
   try {
     const { deviceId, type, metadata } = req.body;
     const file = req.file;
     if (!file) return res.status(400).json({ error: 'no file uploaded' });
 
+    // compute checksum (sha256)
+    const checksum = crypto.createHash('sha256').update(file.buffer).digest('hex');
+
+    // find device and user
     let dev = null;
     if (deviceId) dev = await Device.findOne({ deviceId });
-    if (!dev && deviceId) {
-      dev = new Device({ deviceId, lastSeen: new Date() });
-      await dev.save();
+
+    // check duplicate: same device and checksum (or optionally only checksum globally)
+    let existing = await Media.findOne({ deviceId: deviceId, checksum: checksum });
+    if (existing) {
+      return res.json({ ok: true, duplicate: true, existingId: existing._id });
     }
 
+    // upload to GridFS
     const gfs = req.app.locals.gfsBucket;
     if (!gfs) return res.status(500).json({ error: 'GridFS not ready' });
 
@@ -41,12 +48,27 @@ router.post('/upload', upload.single('media'), async (req, res) => {
           user: dev && dev.user ? dev.user : null,
           filename: file.originalname,
           contentType: file.mimetype,
+          type: type || null,
           metadata: metadata ? JSON.parse(metadata || '{}') : {},
           gfsId: uploadStream.id,
           length: uploadStream.length,
-          uploadDate: uploadStream.uploadDate
+          uploadDate: uploadStream.uploadDate,
+          checksum
         });
         await doc.save();
+
+        // emit event to the owning user if exists
+        const io = req.app.locals.io;
+        if (io && doc.user) {
+          io.to(`user:${String(doc.user)}`).emit('media:new', {
+            _id: doc._id,
+            filename: doc.filename,
+            contentType: doc.contentType,
+            uploadDate: doc.uploadDate,
+            type: doc.type
+          });
+        }
+
         res.json({ ok: true, id: doc._id, gfsId: uploadStream.id });
       });
 
@@ -56,7 +78,6 @@ router.post('/upload', upload.single('media'), async (req, res) => {
   }
 });
 
-// GET /api/media/:id -> requires JWT
 const { requireUser } = require('../middleware/auth');
 router.get('/:id', requireUser, async (req, res) => {
   try {
@@ -64,9 +85,8 @@ router.get('/:id', requireUser, async (req, res) => {
     const doc = await Media.findById(id);
     if (!doc) return res.status(404).json({ error: 'not found' });
     if (!doc.user || String(doc.user) !== String(req.user.id)) return res.status(403).json({ error: 'forbidden' });
-
     const gfs = req.app.locals.gfsBucket;
-    const _id = (typeof doc.gfsId === 'string') ? new ObjectId(doc.gfsId) : doc.gfsId;
+    const _id = mongoose.Types.ObjectId(doc.gfsId);
     const downloadStream = gfs.openDownloadStream(_id);
     res.setHeader('Content-Disposition', 'attachment; filename="' + (doc.filename || 'file') + '"');
     res.setHeader('Content-Type', doc.contentType || 'application/octet-stream');
