@@ -5,17 +5,18 @@
   <title>Mabuie - Painel</title>
 
   <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-sA+e2/6XnCkq7fT2zYpQ3L5wQvQv0Y6q5bq0F9kH0+8=" crossorigin=""/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
   <style>
     body { font-family: Arial, sans-serif; margin:12px; max-width:1200px; }
     header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
-    .toolbar { display:flex; gap:8px; }
-    .icon-btn { padding:8px 12px; background:#eee; border-radius:6px; cursor:pointer; }
+    .toolbar { display:flex; gap:8px; align-items:center; }
+    .icon-btn { padding:8px 12px; background:#eee; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:8px;}
     .hidden { display:none; }
-    #map { height: 400px; border:1px solid #ddd; margin-bottom:12px; }
+    #map { height: 420px; border:1px solid #ddd; margin-bottom:12px; display:none; } /* start hidden */
     section { margin-bottom: 16px; }
+    .status-dot { font-weight:bold; margin-left:6px; }
+    #mediaPlayer video { max-width:100%; height:auto; }
   </style>
 </head>
 <body>
@@ -25,13 +26,13 @@
       <div id="userInfo"></div>
     </div>
     <div class="toolbar">
-      <div class="icon-btn" id="iconDevices">Dispositivos</div>
-      <div class="icon-btn" id="iconMessages">Mensagens</div>
-      <div class="icon-btn" id="iconNotifs">Notificações</div>
-      <div class="icon-btn" id="iconContacts">Contactos</div>
-      <div class="icon-btn" id="iconMedia">Media</div>
-      <div class="icon-btn" id="iconMap">Mapa</div>
-      <div class="icon-btn" id="btnLogout">Sair</div>
+      <div class="icon-btn" id="iconDevices">📱 Dispositivos</div>
+      <div class="icon-btn" id="iconMessages">✉️ Mensagens</div>
+      <div class="icon-btn" id="iconNotifs">🔔 Notificações</div>
+      <div class="icon-btn" id="iconContacts">📇 Contactos</div>
+      <div class="icon-btn" id="iconMedia">📁 Media</div>
+      <div class="icon-btn" id="iconMap">🗺️ Mapa</div>
+      <div class="icon-btn" id="btnLogout">🔓 Sair</div>
     </div>
   </header>
 
@@ -44,7 +45,7 @@
   </div>
 
   <div id="dashboard" class="hidden">
-    <div id="map" class="hidden"></div>
+    <div id="map"></div>
 
     <section id="devicesSection">
       <h2>Dispositivos</h2>
@@ -72,6 +73,11 @@
       <div id="mediaPlayer"></div>
     </section>
 
+    <section id="callsSection" class="hidden">
+      <h2>Chamadas</h2>
+      <ul id="callsList"></ul>
+    </section>
+
     <section id="historySection" class="hidden">
       <h2>Histórico de Localizações (Mapa)</h2>
       <div id="historyList"></div>
@@ -80,8 +86,7 @@
 
   <!-- libs -->
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-o9N1j8vN6kz2rWmE1g2z9iI8XqN0D6A2B2r0k3s5m2Q=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script src="main.js"></script>
 </body>
