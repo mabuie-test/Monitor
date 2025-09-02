@@ -6,12 +6,12 @@ const MediaSchema = new Schema({
   user: { type: Schema.Types.ObjectId, ref: 'User' },
   filename: String,
   contentType: String,
-  type: { type: String }, // e.g. "photo","audio","screen_record"
+  type: { type: String }, // "photo","audio","screen_stream",...
   metadata: Schema.Types.Mixed,
   gfsId: Schema.Types.ObjectId,
   length: Number,
   uploadDate: Date,
-  checksum: { type: String, index: true } // sha256 checksum for dedup
+  checksum: { type: String, index: true }
 });
 
 module.exports = mongoose.model('Media', MediaSchema);
