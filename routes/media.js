@@ -83,6 +83,7 @@ router.post('/upload', upload.single('media'), async (req, res) => {
   }
 });
 
+// routes/media.js (GET /:id)
 const { requireUser } = require('../middleware/auth');
 router.get('/:id', requireUser, async (req, res) => {
   try {
@@ -105,5 +106,4 @@ router.get('/:id', requireUser, async (req, res) => {
     res.status(500).json({ error: 'server error' });
   }
 });
-
 module.exports = router;
