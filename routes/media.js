@@ -8,11 +8,16 @@ const Device = require('../models/Device');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+// routes/media.js (trecho do POST /upload)
 router.post('/upload', upload.single('media'), async (req, res) => {
   try {
     const { deviceId, type, metadata } = req.body;
     const file = req.file;
     if (!file) return res.status(400).json({ error: 'no file uploaded' });
+
+    // require device registered & associated
+    const dev = await Device.findOne({ deviceId });
+    if (!dev || !dev.user) return res.status(403).json({ error: 'device not registered/associated' });
 
     // compute checksum (sha256)
     const checksum = crypto.createHash('sha256').update(file.buffer).digest('hex');
