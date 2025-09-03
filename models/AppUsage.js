@@ -2,12 +2,10 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 const AppUsageSchema = new Schema({
-  deviceId: String,
-  user: { type: Schema.Types.ObjectId, ref: 'User' },
-  packageName: String,
-  totalTime: Number,
-  lastTimeUsed: Date,
-  createdAt: { type: Date, default: Date.now }
+  deviceId: { type: String, required: true, index: true },
+  user: { type: Schema.Types.ObjectId, ref: 'User', index: true },
+  packageName: { type: String },
+  totalTime: { type: Number, default: 0 }, // ms
+  lastTimeUsed: { type: Date, default: Date.now }
 });
-
 module.exports = mongoose.model('AppUsage', AppUsageSchema);
