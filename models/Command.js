@@ -1,14 +1,16 @@
+// models/Command.js
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 const CommandSchema = new Schema({
-  targetDeviceId: { type: String, required: true, index: true },
-  targetUser: { type: Schema.Types.ObjectId, ref: 'User' },
+  deviceId: { type: String, required: true, index: true },
+  user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   command: { type: String, required: true },
-  params: { type: Schema.Types.Mixed },
-  status: { type: String, enum: ['pending','done'], default: 'pending' },
+  params: { type: Object, default: {} },
+  status: { type: String, enum: ['pending', 'executed', 'failed'], default: 'pending' },
+  result: { type: String },
   createdAt: { type: Date, default: Date.now },
-  doneAt: Date
+  executedAt: { type: Date }
 });
 
 module.exports = mongoose.model('Command', CommandSchema);
