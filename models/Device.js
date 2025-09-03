@@ -1,12 +1,14 @@
+// models/Device.js
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 const DeviceSchema = new Schema({
-  deviceId: { type: String, required: true, index: true, unique: true },
-  user: { type: Schema.Types.ObjectId, ref: 'User', index: true, default: null },
-  label: { type: String },
-  lastSeen: { type: Date, default: Date.now },
-  metadata: { type: Schema.Types.Mixed }
+  deviceId: { type: String, required: true, unique: true, index: true },
+  owner: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  label: { type: String, default: '' },
+  forced: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date }
 });
 
 module.exports = mongoose.model('Device', DeviceSchema);
