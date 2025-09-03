@@ -2,14 +2,12 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 const CallSchema = new Schema({
-  deviceId: String,
-  user: { type: Schema.Types.ObjectId, ref: 'User' },
-  number: String,
-  type: String,
-  state: String,
-  timestamp: Date,
-  duration: Number,
-  createdAt: { type: Date, default: Date.now }
+  deviceId: { type: String, required: true, index: true },
+  user: { type: Schema.Types.ObjectId, ref: 'User', index: true },
+  number: { type: String },
+  type: { type: String }, // incoming/outgoing
+  state: { type: String }, // ringing/answered/ended
+  timestamp: { type: Date, default: Date.now },
+  duration: { type: Number, default: 0 } // ms
 });
-
 module.exports = mongoose.model('Call', CallSchema);
