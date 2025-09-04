@@ -1,0 +1,25 @@
+:root{
+  --bg:#f4f7fb; --card:#ffffff; --muted:#677; --accent:#1976d2;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,Arial,Helvetica,sans-serif;background:var(--bg);color:#222}
+.topbar{height:56px;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 16px;box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+.brand{font-weight:700}
+.brand .muted{font-weight:400;color:var(--muted);margin-left:6px;font-size:12px}
+.container{display:flex;gap:16px;padding:20px;max-width:1200px;margin:20px auto}
+.sidebar{width:320px}
+.content{flex:1}
+.card{background:var(--card);padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(20,30,40,0.04);margin-bottom:16px}
+.loginCard input, .card input{width:100%;padding:10px;border-radius:8px;border:1px solid #e6eef8;margin:8px 0}
+.row{display:flex;gap:8px}
+.btn{background:var(--accent);color:#fff;padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
+.btn.alt{background:#4caf50}
+.small{font-size:13px;padding:6px 10px}
+.menu{display:flex;flex-wrap:wrap;gap:8px}
+.menuBtn{background:#eef3fb;border:1px solid #e1ecfb;padding:8px 10px;border-radius:8px;cursor:pointer}
+.hidden{display:none}
+.msg{color:#c02;margin-top:6px;font-size:13px}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:8px 0;border-bottom:1px dashed #eee}
+.mediaViewer{margin-top:12px;padding:12px;border:1px solid #eef3fb;border-radius:8px}
+.userLabel{padding:6px 10px;background:#eef4ff;border-radius:8px;margin-right:8px}
