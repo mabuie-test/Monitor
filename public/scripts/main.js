@@ -1,182 +1,312 @@
-// simple frontend for testing
+// main.js — frontend logic (login, socket, map, sections, media preview)
 const API_BASE = '/api';
 const tokenKey = 'monitor_jwt';
 const userKey = 'monitor_user';
 
-function setLoggedIn(user, token) {
+function setLoggedIn(user, token){
   localStorage.setItem(tokenKey, token);
   localStorage.setItem(userKey, JSON.stringify(user));
 }
-function logout() { localStorage.removeItem(tokenKey); localStorage.removeItem(userKey); location.reload(); }
-function getToken() { return localStorage.getItem(tokenKey); }
-function getUser() { return JSON.parse(localStorage.getItem(userKey) || 'null'); }
-
-const api = {
-  post: async (path, body, token) => {
-    const res = await fetch(API_BASE + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token?{ Authorization: 'Bearer ' + token }: {}) },
-      body: JSON.stringify(body)
-    });
-    return res.json();
-  },
-  get: async (path, token) => {
-    const res = await fetch(API_BASE + path, {
-      headers: { ...(token?{ Authorization: 'Bearer ' + token }: {}) }
-    });
-    if (!res.ok) return [];
-    return res.json();
-  },
-  download: async (path, token) => {
-    const res = await fetch(API_BASE + path, { headers: { Authorization: 'Bearer ' + token }});
-    if (!res.ok) {
-      const txt = await res.text().catch(()=>'<no body>');
-      console.error('download failed', path, res.status, txt);
-      throw new Error('download failed: ' + res.status + ' ' + txt);
-    }
-    return res.blob();
-  }
-};
-
-document.getElementById('btnLogin').addEventListener('click', async () => {
-  const u = document.getElementById('username').value;
-  const p = document.getElementById('password').value;
-  const r = await api.post('/auth/login', { username: u, password: p });
-  if (r.token) { setLoggedIn(r.user, r.token); showDashboard(); } else { document.getElementById('loginMsg').innerText = r.error || 'Login failed'; }
-});
-document.getElementById('btnRegister').addEventListener('click', async () => {
-  const u = document.getElementById('username').value;
-  const p = document.getElementById('password').value;
-  const r = await api.post('/auth/register', { username: u, password: p });
-  document.getElementById('loginMsg').innerText = r.ok ? 'Registered, login' : (r.error || 'Register failed');
-});
-
+function getToken(){ return localStorage.getItem(tokenKey); }
+function getUser(){ try { return JSON.parse(localStorage.getItem(userKey) || 'null'); } catch(e){return null} }
+function logout(){
+  localStorage.removeItem(tokenKey); localStorage.removeItem(userKey);
+  location.reload();
+}
 document.getElementById('btnLogout').addEventListener('click', logout);
 
+async function apiPost(path, body, token=getToken()){
+  const res = await fetch(API_BASE + path, {
+    method:'POST',
+    headers: {'Content-Type':'application/json', ...(token?{Authorization:'Bearer '+token}:{})},
+    body: JSON.stringify(body)
+  });
+  let txt = await res.text();
+  try { return { ok:res.ok, status: res.status, json: JSON.parse(txt) }; } catch(e){ return { ok:res.ok, status: res.status, text: txt }; }
+}
+async function apiGet(path, token=getToken()){
+  const res = await fetch(API_BASE + path, { headers: { ...(token?{Authorization:'Bearer '+token}:{}) } });
+  if (!res.ok) return null;
+  return res.json();
+}
+async function apiDownload(path, token=getToken()){
+  const res = await fetch(API_BASE + path, { headers: { ...(token?{Authorization:'Bearer '+token}:{}) } });
+  if (!res.ok) throw new Error('download failed: ' + res.status);
+  return res.blob();
+}
+
+/* ---------- Login / Register ---------- */
+document.getElementById('btnLogin').addEventListener('click', async () => {
+  await handleAuth('/auth/login');
+});
+document.getElementById('btnRegister').addEventListener('click', async () => {
+  await handleAuth('/auth/register', true);
+});
+
+async function handleAuth(endpoint, isRegister=false){
+  const u = document.getElementById('username').value.trim();
+  const p = document.getElementById('password').value;
+  const loginMsg = document.getElementById('loginMsg'); loginMsg.textContent = '';
+  if (!u || !p) { loginMsg.textContent = 'Preencha usuário e senha'; return; }
+  const r = await apiPost(endpoint, { username: u, password: p });
+  if (isRegister){
+    if (r.ok && r.json && r.json.ok) {
+      loginMsg.style.color='green'; loginMsg.textContent = 'Registado com sucesso. Inicie sessão.';
+    } else {
+      loginMsg.style.color='red'; loginMsg.textContent = r.json && r.json.error ? r.json.error : (r.text || 'Erro no registo');
+    }
+    return;
+  } else {
+    if (r.ok && r.json && r.json.token) {
+      setLoggedIn(r.json.user, r.json.token);
+      showDashboard();
+    } else {
+      loginMsg.style.color='red';
+      loginMsg.textContent = r.json && r.json.error ? r.json.error : (r.text || 'Login falhou');
+    }
+  }
+}
+
+/* ---------- Device register ---------- */
+document.getElementById('btnRegisterDevice').addEventListener('click', async () => {
+  const deviceId = document.getElementById('deviceIdInput').value.trim();
+  const label = document.getElementById('deviceLabelInput').value.trim();
+  const msg = document.getElementById('deviceMsg'); msg.textContent='';
+  if (!deviceId) { msg.textContent = 'Device ID é obrigatório'; return; }
+  const r = await apiPost('/auth/device/register', { deviceId, label }, getToken());
+  if (r.ok && r.json && r.json.ok) {
+    msg.style.color='green';
+    msg.textContent = 'Device registado';
+    loadDevices();
+  } else {
+    msg.style.color='red';
+    msg.textContent = (r.json && r.json.error) || r.text || 'Erro ao registar device';
+  }
+});
+
+/* ---------- UI: menu show/hide ---------- */
+document.querySelectorAll('.menuBtn').forEach(b => {
+  b.addEventListener('click', () => {
+    const target = b.dataset.show;
+    document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
+    document.getElementById(target).classList.remove('hidden');
+
+    // if map shown, invalidate size later
+    if (target === 'mapSection' && map) setTimeout(()=>map.invalidateSize(),300);
+  });
+});
+
+/* ---------- Dashboard bootstrap ---------- */
 let socket = null;
 let map = null;
+let markersLayer = null;
+function showDashboard(){
+  document.getElementById('loginBox').classList.add('hidden');
+  document.getElementById('dashboardPanel').classList.remove('hidden');
+  document.getElementById('btnLogout').classList.remove('hidden');
+  document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
+  document.getElementById('devicesSection').classList.remove('hidden');
 
-async function initSocket() {
-  if (socket) return;
-  const token = getToken();
-  if (!token) return;
-  socket = io('/', { query: { token } });
+  const user = getUser();
+  if (user) {
+    document.getElementById('userLabel').textContent = user.username;
+    document.getElementById('userLabel').classList.remove('hidden');
+  }
 
-  socket.on('connect', () => console.log('socket connected'));
+  initSocket();
+  renderAll();
+  setInterval(renderAll, 8000);
+}
+
+/* ---------- Socket / realtime ---------- */
+function initSocket(){
+  if (socket || !getToken()) return;
+  try {
+    socket = io('/', { query: { token: getToken() } });
+  } catch(e){ console.error('socket init err', e); return; }
+
+  socket.on('connect', ()=>console.log('socket connected'));
+  socket.on('disconnect', ()=>console.log('socket disconnected'));
   socket.on('location:new', (loc) => {
     console.log('location:new', loc);
     addMarkerToMap(loc);
   });
-  socket.on('media:new', (m) => { console.log('media:new', m); loadMedia(); });
-  socket.on('notification:new', (n) => { console.log('notification:new', n); loadNotifs(); });
+  socket.on('media:new', (m) => {
+    console.log('media:new', m);
+    loadMedia(); // refresh list
+  });
+  socket.on('notification:new', (n) => {
+    console.log('notification:new', n);
+    loadNotifs();
+  });
 }
 
-function showDashboard() {
-  document.getElementById('loginBox').classList.add('hidden');
-  document.getElementById('dashboard').classList.remove('hidden');
-  document.getElementById('btnLogout').classList.remove('hidden');
-  render();
-  setInterval(render, 8000);
-}
-
-async function render() {
-  const token = getToken();
-  if (!token) return;
-  document.getElementById('userInfo').innerText = getUser() ? getUser().username : '';
-  await initSocket();
+/* ---------- Renderers ---------- */
+async function renderAll(){
   await loadDevices();
   await loadSms();
+  await loadCalls();
   await loadNotifs();
   await loadContacts();
   await loadMedia();
-  await loadCalls();
+  // load locations only if map visible
+  if (!document.getElementById('mapSection').classList.contains('hidden')) await loadLocations();
 }
 
-async function loadDevices() {
-  const token = getToken(); if (!token) return;
-  const devs = await api.get('/devices', token);
+/* Devices */
+async function loadDevices(){
+  const data = await apiGet('/devices', getToken());
   const box = document.getElementById('devicesList'); box.innerHTML = '';
-  if (!devs || devs.length === 0) box.innerHTML = '<div>Nenhum dispositivo</div>';
-  devs.forEach(d => {
+  if (!data || data.length === 0) { box.innerHTML = '<div>Nenhum dispositivo registado</div>'; return; }
+  data.forEach(d => {
     const el = document.createElement('div');
     const online = d.lastSeen && (Date.now() - new Date(d.lastSeen)) < 120000;
-    el.innerHTML = `<strong>${d.label || d.deviceId}</strong> <span style="color:${online?'green':'red'}">${online?'●':'●'}</span><br/>LastSeen: ${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : 'never'}`;
+    el.innerHTML = `<strong>${escapeHtml(d.label||d.deviceId)}</strong> <span style="color:${online?'green':'red'}">${online?'online':'offline'}</span><br/><small>LastSeen: ${d.lastSeen?new Date(d.lastSeen).toLocaleString():'never'}</small>`;
     box.appendChild(el);
   });
 }
 
-async function loadSms() {
-  const token = getToken(); if (!token) return;
-  const arr = await api.get('/sms', token);
+/* SMS */
+async function loadSms(){
+  const arr = await apiGet('/sms', getToken()) || [];
   const list = document.getElementById('smsList'); list.innerHTML = '';
-  arr.forEach(s => { const li = document.createElement('li'); li.textContent = `${s.sender}: ${s.message} (${new Date(s.timestamp).toLocaleString()})`; list.appendChild(li); });
-}
-
-async function loadNotifs() {
-  const token = getToken(); if (!token) return;
-  const arr = await api.get('/whatsapp', token);
-  const list = document.getElementById('notifList'); list.innerHTML = '';
-  arr.forEach(n => { const li = document.createElement('li'); li.textContent = `${n.packageName}: ${n.message} (${new Date(n.timestamp).toLocaleString()})`; list.appendChild(li); });
-}
-
-async function loadContacts() {
-  const token = getToken(); if (!token) return;
-  const arr = await api.get('/contacts', token);
-  const list = document.getElementById('contactsList'); list.innerHTML = '';
-  arr.forEach(c => { const li = document.createElement('li'); li.textContent = `${c.name} — ${c.number}`; list.appendChild(li); });
-}
-
-async function loadMedia() {
-  const token = getToken(); if (!token) return;
-  const arr = await api.get('/media', token);
-  const list = document.getElementById('mediaList'); list.innerHTML = '';
-  arr.forEach(m => {
+  if (arr.length===0) list.innerHTML = '<li>Nenhuma SMS</li>';
+  arr.forEach(s => {
     const li = document.createElement('li');
-    const btn = document.createElement('button');
-    btn.className = 'small';
-    btn.textContent = 'Ver/Download';
-    btn.onclick = async () => {
-      try {
-        const blob = await api.download('/media/' + m._id, token);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = m.filename || 'file'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-      } catch (e) {
-        console.error('download failed', e);
-        alert('Download failed. Ver consola.');
-      }
-    };
-    li.appendChild(document.createTextNode(`${m.filename || m._id} [${m.type||m.contentType}] `));
-    li.appendChild(btn);
+    li.innerHTML = `<b>${escapeHtml(s.sender||'unknown')}</b>: ${escapeHtml(s.message||'')} <span class="muted">(${new Date(s.timestamp).toLocaleString()})</span>`;
     list.appendChild(li);
   });
 }
 
-async function loadCalls() {
-  const token = getToken(); if (!token) return;
-  const arr = await api.get('/call', token);
+/* Calls */
+async function loadCalls(){
+  const arr = await apiGet('/call', getToken()) || [];
   const list = document.getElementById('callsList'); list.innerHTML = '';
-  arr.forEach(c => { const li = document.createElement('li'); li.textContent = `${c.number || 'unknown'} — ${c.state} (${new Date(c.timestamp).toLocaleString()})`; list.appendChild(li); });
+  if (arr.length===0) list.innerHTML = '<li>Nenhuma chamada</li>';
+  arr.forEach(c => {
+    const li = document.createElement('li');
+    li.innerHTML = `<b>${escapeHtml(c.number||'unknown')}</b> — ${escapeHtml(c.state||'')} <span class="muted">(${new Date(c.timestamp).toLocaleString()})</span>`;
+    list.appendChild(li);
+  });
 }
 
-// map handling
-let map;
-function addMarkerToMap(loc) {
+/* Notifs */
+async function loadNotifs(){
+  const arr = await apiGet('/whatsapp', getToken()) || [];
+  const list = document.getElementById('notifList'); list.innerHTML = '';
+  if (arr.length===0) list.innerHTML = '<li>Nenhuma notificação</li>';
+  arr.forEach(n => {
+    const li = document.createElement('li');
+    li.innerHTML = `<b>${escapeHtml(n.packageName||'')}</b>: ${escapeHtml(n.message||'')} <span class="muted">(${new Date(n.timestamp).toLocaleString()})</span>`;
+    list.appendChild(li);
+  });
+}
+
+/* Contacts */
+async function loadContacts(){
+  const arr = await apiGet('/contacts', getToken()) || [];
+  const list = document.getElementById('contactsList'); list.innerHTML = '';
+  if (arr.length===0) list.innerHTML = '<li>Nenhum contacto</li>';
+  arr.forEach(c => {
+    const li = document.createElement('li');
+    li.innerHTML = `<b>${escapeHtml(c.name||'')}</b> — ${escapeHtml(c.number||'')}`;
+    list.appendChild(li);
+  });
+}
+
+/* Media */
+let currentMediaDoc = null;
+async function loadMedia(){
+  const arr = await apiGet('/media', getToken()) || [];
+  const container = document.getElementById('mediaList'); container.innerHTML = '';
+  if (arr.length===0) container.innerHTML = '<div>Nenhuma media</div>';
+  arr.forEach(m => {
+    const row = document.createElement('div'); row.style.margin='8px 0';
+    const previewBtn = document.createElement('button'); previewBtn.textContent='Ver'; previewBtn.className='small';
+    previewBtn.addEventListener('click', ()=>openMedia(m));
+    const dlBtn = document.createElement('button'); dlBtn.textContent='Download'; dlBtn.className='small';
+    dlBtn.addEventListener('click', ()=>downloadMedia(m));
+    row.appendChild(document.createTextNode((m.filename||m._id)+' '));
+    row.appendChild(previewBtn); row.appendChild(dlBtn);
+    container.appendChild(row);
+  });
+}
+
+function openMedia(m){
+  currentMediaDoc = m;
+  const viewer = document.getElementById('mediaViewer');
+  const preview = document.getElementById('mediaPreview'); preview.innerHTML = '';
+  // decide type
+  if (m.contentType && m.contentType.startsWith('image/')){
+    const img = document.createElement('img'); img.style.maxWidth='100%';
+    img.src = `/api/media/${m._id}?_t=${Date.now()}`; // token is required via Authorization header for download; will use fetch for actual blob when clicking download
+    preview.appendChild(img);
+  } else if (m.contentType && m.contentType.startsWith('audio/')){
+    const audio = document.createElement('audio'); audio.controls=true;
+    audio.src = `/api/media/${m._id}?_t=${Date.now()}`;
+    preview.appendChild(audio);
+  } else if (m.contentType && m.contentType.startsWith('video/')){
+    const v = document.createElement('video'); v.controls=true; v.style.maxWidth='100%';
+    v.src = `/api/media/${m._id}?_t=${Date.now()}`;
+    preview.appendChild(v);
+  } else {
+    preview.textContent = 'Pré-visualização não disponível. Use Download.';
+  }
+  document.getElementById('mediaDownloadBtn').onclick = ()=>downloadMedia(currentMediaDoc);
+  document.getElementById('mediaCloseBtn').onclick = ()=>{ document.getElementById('mediaViewer').classList.add('hidden'); };
+  viewer.classList.remove('hidden');
+}
+
+async function downloadMedia(m){
   try {
-    if (!map) {
-      const mapDiv = document.getElementById('map');
-      mapDiv.style.display = 'block';
-      map = L.map('map').setView([0,0], 2);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    }
-    const lat = parseFloat(loc.lat), lon = parseFloat(loc.lon);
-    if (isNaN(lat) || isNaN(lon)) return;
-    const mk = L.marker([lat, lon]).addTo(map);
-    mk.bindPopup(`<b>${loc.deviceId}</b><br/>${lat.toFixed(5)},${lon.toFixed(5)}<br/>${new Date(loc.timestamp).toLocaleString()}`);
-    map.setView([lat, lon], 14);
-  } catch (e) { console.error(e); }
+    const blob = await apiDownload('/media/' + m._id, getToken());
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = m.filename || 'file';
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  } catch (e) {
+    console.error('download failed', e);
+    alert('Falha no download. Ver console para detalhes.');
+  }
 }
 
-window.addEventListener('load', () => {
-  if (getToken()) showDashboard();
-});
+/* Locations / map */
+async function loadLocations(){
+  const arr = await apiGet('/location', getToken()) || [];
+  if (!map) initMap();
+  if (!markersLayer) markersLayer = L.layerGroup().addTo(map);
+  markersLayer.clearLayers();
+  arr.reverse().forEach(loc => addMarkerToMap(loc, false));
+  if (arr.length) map.setView([arr[0].lat, arr[0].lon], 13);
+}
 
+function initMap(){
+  map = L.map('map',{ center:[0,0], zoom:2 });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'© OpenStreetMap contributors' }).addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
+}
+
+function addMarkerToMap(loc, fly=true){
+  if (!map) initMap();
+  if (!markersLayer) markersLayer = L.layerGroup().addTo(map);
+  if (!loc || isNaN(Number(loc.lat)) || isNaN(Number(loc.lon))) return;
+  const mk = L.marker([Number(loc.lat), Number(loc.lon)]);
+  const popup = `<b>${escapeHtml(loc.deviceId||'')}</b><br/>${Number(loc.lat).toFixed(5)}, ${Number(loc.lon).toFixed(5)}<br/>${new Date(loc.timestamp).toLocaleString()}`;
+  mk.bindPopup(popup).addTo(markersLayer);
+  if (fly) map.setView([Number(loc.lat), Number(loc.lon)], 14);
+}
+
+/* ---------- Helpers ---------- */
+function escapeHtml(s){ if (!s && s!==0) return ''; return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+/* ---------- Init on load ---------- */
+window.addEventListener('load', ()=>{
+  // restore UI if logged
+  if (getToken()){
+    document.getElementById('loginBox').classList.add('hidden');
+    document.getElementById('dashboardPanel').classList.remove('hidden');
+    showDashboard();
+  } else {
+    document.getElementById('loginBox').classList.remove('hidden');
+    document.getElementById('dashboardPanel').classList.add('hidden');
+  }
+});
